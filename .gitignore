@@ -1,0 +1,30 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+*.local
+count.txt
+.env
+.env.local
+.env.production.local
+.nitro
+.tanstack
+.wrangler
+.output
+.vinxi
+todos.json
+
+# Test coverage
+coverage/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Drizzle
+drizzle/meta/
+
+# Editor
+*.swp
+*.swo
+*~
