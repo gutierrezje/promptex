@@ -2,14 +2,15 @@ import {
   HeadContent,
   Outlet,
   Scripts,
-  createRootRoute,
+  createRootRouteWithContext,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
-
+import type { RouterContext } from '@/router'
+import { getSessionUser } from '@/server/functions/session.fn'
 import appCss from '../styles.css?url'
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<RouterContext>()({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -26,6 +27,15 @@ export const Route = createRootRoute({
       },
     ],
   }),
+
+  beforeLoad: async () => {
+    try {
+      const user = await getSessionUser()
+      return { user }
+    } catch {
+      return { user: null }
+    }
+  },
 
   shellComponent: RootDocument,
   component: RootComponent,

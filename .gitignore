@@ -21,8 +21,7 @@ coverage/
 test-results/
 playwright-report/
 
-# Drizzle
-drizzle/meta/
+# Drizzle (meta/ and .sql migrations ARE committed — they're the migration history)
 
 # Editor
 *.swp

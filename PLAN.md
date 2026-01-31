@@ -9,7 +9,7 @@ High-productivity tool connecting devs to impactful open-source issues. Discover
 | Framework | TanStack Start (beta, full-stack SSR) |
 | Database | PostgreSQL (Neon free tier) + Drizzle ORM |
 | Auth | GitHub OAuth 2.0 (custom, no library) |
-| Sessions | `iron-session` (encrypted cookie) |
+| Sessions | TanStack Start built-in encrypted sessions |
 | AI | Gemini 3.0 Flash via `@google/genai` (free tier) |
 | Runtime + Package Manager | Bun (full runtime) |
 | GitHub API | `octokit` |
@@ -98,7 +98,7 @@ issuance/
 │   │   ├── middleware/
 │   │   │   └── auth.middleware.ts
 │   │   └── lib/
-│   │       ├── session.ts           # iron-session config
+│   │       ├── session.ts           # TanStack Start session config
 │   │       ├── crypto.ts            # Token encryption, CSRF
 │   │       └── rate-limit.ts        # In-memory rate limit tracker
 │   ├── lib/
@@ -199,7 +199,7 @@ The user sees the rating before copying/posting. Red-rated drafts show a warning
 ## Auth Flow
 1. User clicks "Sign in with GitHub" -> redirect to GitHub OAuth
 2. GitHub redirects back with code -> exchange for access token
-3. Upsert user in DB, encrypt token, create iron-session cookie
+3. Upsert user in DB, encrypt token, create encrypted session cookie
 4. `_authed.tsx` layout guard checks session on all protected routes
 5. Scopes: `repo` (read repos, create webhooks) + `read:user`
 
@@ -213,7 +213,7 @@ The user sees the rating before copying/posting. Red-rated drafts show a warning
 
 ### Phase 2: Authentication
 - GitHub OAuth App setup
-- `iron-session` config, `/login`, `/auth/github`, `/auth/github/callback`
+- Session config, `/login`, `/auth/github`, `/auth/github/callback`
 - `getSession` server fn, `auth.middleware.ts`, `_authed.tsx` guard
 - Auth integration tests
 
@@ -257,6 +257,23 @@ The user sees the rating before copying/posting. Red-rated drafts show a warning
 - `DraftPanel`, `ContextPanel`, `QualityGate` components
 - User must engage with context before drafting
 - Unit tests with mocked Gemini
+
+#### Draft Philosophy & Tonal Guidelines
+The goal of AI drafting is NOT to write comments for the user — it's to help them write comments that **get taken seriously by maintainers and move the conversation forward**. A technically correct comment with the wrong tone gets ignored or damages credibility.
+
+**Core drafting principles:**
+- **Epistemic humility over certainty.** Prefer "It's possible that..." / "In my testing..." / "This might be..." over "The root cause is..." / "This is definitely...". The user may not fully understand the system internals, and overconfident language undermines trust when wrong.
+- **Show work, not conclusions.** A minimal reproduction with code blocks is worth more than a paragraph of analysis. The draft should prioritize concrete evidence (steps to reproduce, code snippets, environment details) over explanations.
+- **Leave room to be wrong.** Always hedge speculative analysis. "My guess is X, but I haven't verified in the source" is much stronger than "X causes Y" when the user can't defend the claim in follow-up comments.
+- **Match community tone.** Scan existing issue comments and match the formality level. Some projects are casual, some are formal. Never add emoji or exclamation marks unless the thread already uses them.
+- **Don't over-explain.** If the reproduction speaks for itself, don't add a speculative "Possible Explanation" section the user can't back up. Less is more — a clear repro with no analysis is better than a clear repro with wrong analysis.
+- **Frame contributions, not complaints.** "I found X" not "X is broken." "This might help narrow it down" not "You should fix this."
+
+**Quality gate tonal checks (in addition to value/specificity/qualification):**
+- **Certainty calibration**: Does the draft state things as fact that the user may not be able to defend? Flag overconfident claims.
+- **Actionability**: Does every paragraph either provide evidence or ask a useful question? Remove filler.
+- **Tone match**: Is the formality appropriate for the project? Check against existing comments in the thread.
+- **Human-like writing**: Avoid patterns that read as AI-generated. No em dashes (use commas, periods, or parentheses instead). No "Furthermore" / "Additionally" / "It's worth noting" filler. No fancy unicode arrows or bullet decorations. Keep punctuation plain. Don't add a big header/title to the comment. The draft should read like a developer typed it in a text box, not like it was edited by a copywriter.
 
 ### Phase 9: Secondary Views
 - `commits.tsx`, `pulls.tsx`, `releases.tsx` (filter `github_events` by type)

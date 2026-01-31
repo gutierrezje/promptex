@@ -1,4 +1,5 @@
-import { Link, useRouterState } from '@tanstack/react-router'
+import { Link, useRouteContext, useRouterState } from '@tanstack/react-router'
+import { useServerFn } from '@tanstack/react-start'
 import {
   LayoutDashboard,
   AlertCircle,
@@ -8,6 +9,7 @@ import {
   Compass,
   Settings,
   BookMarked,
+  LogOut,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -21,6 +23,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { logout } from '@/server/functions/auth.fns'
+
 
 const mainNav = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -39,6 +43,10 @@ const manageNav = [
 export function AppSidebar() {
   const routerState = useRouterState()
   const currentPath = routerState.location.pathname
+  const { user } = useRouteContext({ from: '/_authed' })
+  const handleLogout = useServerFn(logout)
+
+  if (!user) return null
 
   return (
     <Sidebar>
@@ -98,8 +106,30 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <div className="px-2 py-1 text-xs text-muted-foreground">
-          Issuance v0.1.0
+        <div className="flex items-center justify-between px-2 py-1">
+          <div className="flex items-center gap-2 min-w-0">
+            {user.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt={user.username}
+                className="h-7 w-7 rounded-full shrink-0"
+              />
+            ) : (
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-700 text-xs font-medium shrink-0">
+                {user.username[0]?.toUpperCase()}
+              </div>
+            )}
+            <span className="text-sm font-medium truncate">
+              {user.displayName ?? user.username}
+            </span>
+          </div>
+          <button
+            onClick={() => handleLogout().then(() => window.location.assign('/login'))}
+            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-slate-800"
+            title="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
       </SidebarFooter>
     </Sidebar>
