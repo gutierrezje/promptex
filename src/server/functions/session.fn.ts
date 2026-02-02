@@ -1,5 +1,9 @@
 import { createServerFn } from '@tanstack/react-start'
+import { getSession } from '@tanstack/react-start/server'
 import { eq, and, gt } from 'drizzle-orm'
+import { sessionConfig } from '@/server/lib/session'
+import { db } from '@/server/db'
+import { sessions, users } from '@/server/db/schema'
 
 export type SafeUser = {
   id: string
@@ -13,11 +17,6 @@ export type SafeUser = {
 
 export const getSessionUser = createServerFn({ method: 'GET' }).handler(
   async (): Promise<SafeUser | null> => {
-    const { getSession } = await import('@tanstack/react-start/server')
-    const { sessionConfig } = await import('@/server/lib/session')
-    const { db } = await import('@/server/db')
-    const { sessions, users } = await import('@/server/db/schema')
-
     const session = await getSession(sessionConfig)
     const userId = session.data.userId as string | undefined
 

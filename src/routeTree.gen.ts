@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TestSessionRouteImport } from './routes/test-session'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as IndexRouteImport } from './routes/index'
@@ -23,6 +24,11 @@ import { Route as AuthedDashboardRouteImport } from './routes/_authed/dashboard'
 import { Route as AuthedCommitsRouteImport } from './routes/_authed/commits'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth/github.callback'
 
+const TestSessionRoute = TestSessionRouteImport.update({
+  id: '/test-session',
+  path: '/test-session',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -91,6 +97,7 @@ const AuthGithubCallbackRoute = AuthGithubCallbackRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/test-session': typeof TestSessionRoute
   '/commits': typeof AuthedCommitsRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/discover': typeof AuthedDiscoverRoute
@@ -105,6 +112,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/test-session': typeof TestSessionRoute
   '/commits': typeof AuthedCommitsRoute
   '/dashboard': typeof AuthedDashboardRoute
   '/discover': typeof AuthedDiscoverRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authed': typeof AuthedRouteWithChildren
   '/login': typeof LoginRoute
+  '/test-session': typeof TestSessionRoute
   '/_authed/commits': typeof AuthedCommitsRoute
   '/_authed/dashboard': typeof AuthedDashboardRoute
   '/_authed/discover': typeof AuthedDiscoverRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/test-session'
     | '/commits'
     | '/dashboard'
     | '/discover'
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/test-session'
     | '/commits'
     | '/dashboard'
     | '/discover'
@@ -166,6 +177,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authed'
     | '/login'
+    | '/test-session'
     | '/_authed/commits'
     | '/_authed/dashboard'
     | '/_authed/discover'
@@ -182,11 +194,19 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthedRoute: typeof AuthedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  TestSessionRoute: typeof TestSessionRoute
   AuthGithubRoute: typeof AuthGithubRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/test-session': {
+      id: '/test-session'
+      path: '/test-session'
+      fullPath: '/test-session'
+      preLoaderRoute: typeof TestSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -322,6 +342,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthedRoute: AuthedRouteWithChildren,
   LoginRoute: LoginRoute,
+  TestSessionRoute: TestSessionRoute,
   AuthGithubRoute: AuthGithubRouteWithChildren,
 }
 export const routeTree = rootRouteImport

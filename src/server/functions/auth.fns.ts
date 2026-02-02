@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { setCookie, getCookie, deleteCookie, updateSession, getSession, clearSession } from '@tanstack/react-start/server'
 import { eq } from 'drizzle-orm'
 import { randomBytes } from 'crypto'
 import {
@@ -7,6 +8,11 @@ import {
   GITHUB_API_URL,
   GITHUB_SCOPES,
 } from '@/lib/constants'
+import { env } from '@/server/lib/env'
+import { db } from '@/server/db'
+import { users, sessions } from '@/server/db/schema'
+import { encrypt } from '@/server/lib/crypto'
+import { sessionConfig } from '@/server/lib/session'
 
 export type { SafeUser } from './session.fn'
 
@@ -14,9 +20,6 @@ export type { SafeUser } from './session.fn'
 
 export const getGitHubAuthUrl = createServerFn({ method: 'GET' }).handler(
   async (): Promise<string> => {
-    const { setCookie } = await import('@tanstack/react-start/server')
-    const { env } = await import('@/server/lib/env')
-
     const state = randomBytes(32).toString('hex')
 
     setCookie('oauth_state', state, {
@@ -43,15 +46,6 @@ export const getGitHubAuthUrl = createServerFn({ method: 'GET' }).handler(
 export const handleGitHubCallback = createServerFn({ method: 'POST' })
   .inputValidator((input: { code: string; state: string }) => input)
   .handler(async ({ data: { code, state } }): Promise<{ error?: string }> => {
-    const { getCookie, deleteCookie, updateSession } = await import(
-      '@tanstack/react-start/server'
-    )
-    const { env } = await import('@/server/lib/env')
-    const { db } = await import('@/server/db')
-    const { users, sessions } = await import('@/server/db/schema')
-    const { encrypt } = await import('@/server/lib/crypto')
-    const { sessionConfig } = await import('@/server/lib/session')
-
     const storedState = getCookie('oauth_state')
     deleteCookie('oauth_state', { path: '/' })
 
@@ -140,13 +134,6 @@ export const handleGitHubCallback = createServerFn({ method: 'POST' })
 // ─── Logout ──────────────────────────────────────────────────────────────────
 
 export const logout = createServerFn({ method: 'POST' }).handler(async () => {
-  const { getSession, clearSession } = await import(
-    '@tanstack/react-start/server'
-  )
-  const { db } = await import('@/server/db')
-  const { sessions } = await import('@/server/db/schema')
-  const { sessionConfig } = await import('@/server/lib/session')
-
   const session = await getSession(sessionConfig)
   const userId = session.data.userId as string | undefined
 
