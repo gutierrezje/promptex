@@ -1,6 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
 import { setCookie, getCookie, deleteCookie, updateSession, getSession, clearSession } from '@tanstack/react-start/server'
-import { eq } from 'drizzle-orm'
 import { randomBytes } from 'crypto'
 import {
   GITHUB_OAUTH_URL,
@@ -10,11 +9,32 @@ import {
 } from '@/lib/constants'
 import { env } from '@/server/lib/env'
 import { db } from '@/server/db'
-import { users, sessions } from '@/server/db/schema'
 import { encrypt } from '@/server/lib/crypto'
 import { sessionConfig } from '@/server/lib/session'
+import {
+  exchangeCodeForToken,
+  fetchGitHubUser,
+  upsertUserAndCreateSession,
+  deleteUserSessions,
+  type AuthConfig,
+} from '@/server/services/auth.service'
 
 export type { SafeUser } from './session.fn'
+
+// Dependency injection for auth service
+const authDeps = {
+  db,
+  fetch: globalThis.fetch,
+  encrypt,
+}
+
+// OAuth configuration
+const authConfig: AuthConfig = {
+  clientId: env.GITHUB_CLIENT_ID,
+  clientSecret: env.GITHUB_CLIENT_SECRET,
+  tokenUrl: GITHUB_TOKEN_URL,
+  apiUrl: GITHUB_API_URL,
+}
 
 // ─── OAuth: generate GitHub redirect URL ─────────────────────────────────────
 
@@ -46,6 +66,7 @@ export const getGitHubAuthUrl = createServerFn({ method: 'GET' }).handler(
 export const handleGitHubCallback = createServerFn({ method: 'POST' })
   .inputValidator((input: { code: string; state: string }) => input)
   .handler(async ({ data: { code, state } }): Promise<{ error?: string }> => {
+    // Validate OAuth state
     const storedState = getCookie('oauth_state')
     deleteCookie('oauth_state', { path: '/' })
 
@@ -54,79 +75,30 @@ export const handleGitHubCallback = createServerFn({ method: 'POST' })
     }
 
     // Exchange code for access token
-    let accessToken: string
-    try {
-      const tokenRes = await fetch(GITHUB_TOKEN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          client_id: env.GITHUB_CLIENT_ID,
-          client_secret: env.GITHUB_CLIENT_SECRET,
-          code,
-        }),
-      })
-      const tokenData = (await tokenRes.json()) as {
-        access_token?: string
-        error?: string
-      }
-      if (!tokenData.access_token) {
-        return { error: 'token_exchange' }
-      }
-      accessToken = tokenData.access_token
-    } catch {
-      return { error: 'token_exchange' }
+    const tokenResult = await exchangeCodeForToken(authDeps, authConfig, code)
+    if (tokenResult.error || !tokenResult.accessToken) {
+      return { error: tokenResult.error }
     }
 
     // Fetch GitHub user profile
-    let ghUser: {
-      id: number
-      login: string
-      name: string | null
-      avatar_url: string
-    }
-    try {
-      const userRes = await fetch(`${GITHUB_API_URL}/user`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-      if (!userRes.ok) return { error: 'profile_fetch' }
-      ghUser = (await userRes.json()) as typeof ghUser
-    } catch {
-      return { error: 'profile_fetch' }
+    const userResult = await fetchGitHubUser(
+      authDeps,
+      tokenResult.accessToken,
+      authConfig.apiUrl,
+    )
+    if (userResult.error || !userResult.user) {
+      return { error: userResult.error }
     }
 
-    // Encrypt token and upsert user
-    const encryptedToken = encrypt(accessToken)
-
-    const [user] = await db
-      .insert(users)
-      .values({
-        githubId: ghUser.id,
-        username: ghUser.login,
-        displayName: ghUser.name,
-        avatarUrl: ghUser.avatar_url,
-        accessToken: encryptedToken,
-      })
-      .onConflictDoUpdate({
-        target: users.githubId,
-        set: {
-          username: ghUser.login,
-          displayName: ghUser.name,
-          avatarUrl: ghUser.avatar_url,
-          accessToken: encryptedToken,
-          updatedAt: new Date(),
-        },
-      })
-      .returning({ id: users.id })
-
-    // Create DB session (7-day expiry)
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    await db.insert(sessions).values({ userId: user.id, expiresAt })
+    // Upsert user and create session
+    const { userId } = await upsertUserAndCreateSession(
+      authDeps,
+      userResult.user,
+      tokenResult.accessToken,
+    )
 
     // Set encrypted session cookie
-    await updateSession(sessionConfig, { userId: user.id })
+    await updateSession(sessionConfig, { userId })
 
     return {}
   })
@@ -138,7 +110,7 @@ export const logout = createServerFn({ method: 'POST' }).handler(async () => {
   const userId = session.data.userId as string | undefined
 
   if (userId) {
-    await db.delete(sessions).where(eq(sessions.userId, userId))
+    await deleteUserSessions(authDeps, userId)
   }
 
   await clearSession(sessionConfig)

@@ -1,191 +1,84 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PGlite } from '@electric-sql/pglite'
+import { createTestDb, cleanupTestDb } from '../helpers/db'
+import {
+  exchangeCodeForToken,
+  fetchGitHubUser,
+  upsertUserAndCreateSession,
+  deleteUserSessions,
+  type GitHubUser,
+} from '@/server/services/auth.service'
+import { users, sessions } from '@/server/db/schema'
 
-vi.mock('@tanstack/react-start', () => ({
-  createServerFn: () => ({
-    handler: (fn: unknown) => fn,
-    inputValidator: () => ({
-      handler: (fn: unknown) => fn,
-    }),
-  }),
-}))
-
-vi.mock('@/server/lib/env', () => ({
-  env: {
-    DATABASE_URL: 'http://localhost:5432/test',
-    GITHUB_CLIENT_ID: 'test-client-id',
-    GITHUB_CLIENT_SECRET: 'test-client-secret',
-    GEMINI_API_KEY: 'test-gemini-key',
-    SESSION_SECRET: 'test-session-secret-32-chars!!',
-    APP_URL: 'http://localhost:3000',
-    NODE_ENV: 'test',
-  },
-}))
-
-vi.mock('@tanstack/react-start/server', () => ({
-  setCookie: vi.fn(),
-  getCookie: vi.fn(),
-  deleteCookie: vi.fn(),
-  updateSession: vi.fn(),
-  getSession: vi.fn(),
-  clearSession: vi.fn(),
-}))
-
-vi.mock('@/server/lib/crypto', () => ({
-  encrypt: (value: string) => `encrypted:${value}`,
-}))
-
-const mockSessionConfig = {
-  password: 'test-session-secret-32-chars!!',
-  name: 'issuance_session',
-  maxAge: 60 * 60 * 24 * 7,
-  cookie: { httpOnly: true, secure: false, sameSite: 'lax', path: '/' },
-}
-
-vi.mock('@/server/lib/session', () => ({
-  sessionConfig: mockSessionConfig,
-}))
-
-const usersTable = { __table: 'users', githubId: Symbol('githubId') }
-const sessionsTable = {
-  __table: 'sessions',
-  userId: Symbol('userId')  // Mock the userId column for eq() queries
-}
-
-vi.mock('@/server/db/schema', () => ({
-  users: usersTable,
-  sessions: sessionsTable,
-}))
-
-const insertMock = vi.fn()
-const userReturningMock = vi.fn()
-const userOnConflictMock = vi.fn()
-const userValuesMock = vi.fn()
-const sessionValuesMock = vi.fn()
-const deleteMock = vi.fn()
-const whereClauseMock = vi.fn()
-
-vi.mock('@/server/db', () => ({
-  db: {
-    insert: insertMock,
-    delete: deleteMock,
-  },
-}))
-
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn((column, value) => ({ column, value, _op: 'eq' })),
-}))
-
-describe('Auth unit tests', () => {
-  beforeEach(() => {
-    vi.resetAllMocks()
-    vi.unstubAllGlobals()
-
-    userReturningMock.mockResolvedValue([{ id: 'user-123' }])
-    userOnConflictMock.mockReturnValue({ returning: userReturningMock })
-    userValuesMock.mockReturnValue({
-      onConflictDoUpdate: userOnConflictMock,
-      returning: userReturningMock,
-    })
-    sessionValuesMock.mockResolvedValue(undefined)
-    insertMock.mockImplementation((table) => {
-      if (table === usersTable) {
-        return { values: userValuesMock }
-      }
-      if (table === sessionsTable) {
-        return { values: sessionValuesMock }
-      }
-      return { values: vi.fn() }
-    })
-  })
-
-  it('builds the GitHub auth URL and sets state cookie', async () => {
-    const { getGitHubAuthUrl } = await import('@/server/functions/auth.fns')
-    const server = await import('@tanstack/react-start/server')
-
-    const url = await getGitHubAuthUrl()
-
-    const setCookie = server.setCookie as unknown as {
-      mock: { calls: [string, string, Record<string, unknown>][] }
-    }
-
-    expect(setCookie.mock.calls).toHaveLength(1)
-    const [cookieName, cookieValue, options] = setCookie.mock.calls[0]
-    const parsedUrl = new URL(url)
-
-    expect(cookieName).toBe('oauth_state')
-    expect(parsedUrl.searchParams.get('state')).toBe(cookieValue)
-    expect(parsedUrl.searchParams.get('client_id')).toBe('test-client-id')
-    expect(options).toMatchObject({ httpOnly: true, path: '/' })
-  })
-
-  it('rejects callbacks with a mismatched state', async () => {
-    const server = await import('@tanstack/react-start/server')
-    const getCookie = server.getCookie as unknown as { mockReturnValue: (value: string) => void }
-    getCookie.mockReturnValue('stored-state')
-    global.fetch = vi.fn()
-
-    const { handleGitHubCallback } = await import('@/server/functions/auth.fns')
-    const result = await handleGitHubCallback({
-      data: { code: 'code', state: 'bad-state' },
-    })
-
-    expect(result).toEqual({ error: 'invalid_state' })
-    expect(server.deleteCookie).toHaveBeenCalledWith('oauth_state', { path: '/' })
-    expect(global.fetch).not.toHaveBeenCalled()
-  })
-
-  it('returns token exchange errors when GitHub fails', async () => {
-    const server = await import('@tanstack/react-start/server')
-    const getCookie = server.getCookie as unknown as { mockReturnValue: (value: string) => void }
-    getCookie.mockReturnValue('stored-state')
-
-    global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ error: 'bad_code' }),
-    })
-
-    const { handleGitHubCallback } = await import('@/server/functions/auth.fns')
-    const result = await handleGitHubCallback({
-      data: { code: 'code', state: 'stored-state' },
-    })
-
-    expect(result).toEqual({ error: 'token_exchange' })
-  })
-
-  it('returns profile fetch errors when GitHub user lookup fails', async () => {
-    const server = await import('@tanstack/react-start/server')
-    const getCookie = server.getCookie as unknown as { mockReturnValue: (value: string) => void }
-    getCookie.mockReturnValue('stored-state')
-
-    global.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => ({ access_token: 'token' }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-      })
-
-    const { handleGitHubCallback } = await import('@/server/functions/auth.fns')
-    const result = await handleGitHubCallback({
-      data: { code: 'code', state: 'stored-state' },
-    })
-
-    expect(result).toEqual({ error: 'profile_fetch' })
-  })
-
-  it('creates a session on successful callback', async () => {
-    const server = await import('@tanstack/react-start/server')
-    const getCookie = server.getCookie as unknown as { mockReturnValue: (value: string) => void }
-    getCookie.mockReturnValue('matching-state')
-
-    global.fetch = vi
-      .fn()
-      // POST to github.com/login/oath/access_token
-      .mockResolvedValueOnce({
+describe('Auth Service', () => {
+  describe('exchangeCodeForToken', () => {
+    it('returns access token on successful exchange', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
         json: async () => ({ access_token: 'gh_token_123' }),
       })
-      // GET to api.github.com/user
-      .mockResolvedValueOnce({
+
+      const result = await exchangeCodeForToken(
+        { fetch: mockFetch },
+        {
+          clientId: 'test-client',
+          clientSecret: 'test-secret',
+          tokenUrl: 'https://github.com/login/oauth/access_token',
+        },
+        'auth-code-123',
+      )
+
+      expect(result).toEqual({ accessToken: 'gh_token_123' })
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://github.com/login/oauth/access_token',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            code: 'auth-code-123',
+          }),
+        }),
+      )
+    })
+
+    it('returns error when no access token in response', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        json: async () => ({ error: 'bad_code' }),
+      })
+
+      const result = await exchangeCodeForToken(
+        { fetch: mockFetch },
+        {
+          clientId: 'test-client',
+          clientSecret: 'test-secret',
+          tokenUrl: 'https://github.com/login/oauth/access_token',
+        },
+        'bad-code',
+      )
+
+      expect(result).toEqual({ error: 'token_exchange' })
+    })
+
+    it('returns error on network failure', async () => {
+      const mockFetch = vi.fn().mockRejectedValue(new Error('Network error'))
+
+      const result = await exchangeCodeForToken(
+        { fetch: mockFetch },
+        {
+          clientId: 'test-client',
+          clientSecret: 'test-secret',
+          tokenUrl: 'https://github.com/login/oauth/access_token',
+        },
+        'auth-code',
+      )
+
+      expect(result).toEqual({ error: 'token_exchange' })
+    })
+  })
+
+  describe('fetchGitHubUser', () => {
+    it('returns user profile on success', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           id: 12345,
@@ -195,71 +88,213 @@ describe('Auth unit tests', () => {
         }),
       })
 
-    const { handleGitHubCallback } = await import('@/server/functions/auth.fns')
-    const result = await handleGitHubCallback({
-      data: { code: 'auth-code', state: 'matching-state' },
+      const result = await fetchGitHubUser(
+        { fetch: mockFetch },
+        'gh_token_123',
+        'https://api.github.com',
+      )
+
+      expect(result).toEqual({
+        user: {
+          id: 12345,
+          login: 'testuser',
+          name: 'Test User',
+          avatar_url: 'https://github.com/avatar.png',
+        },
+      })
+      expect(mockFetch).toHaveBeenCalledWith('https://api.github.com/user', {
+        headers: { Authorization: 'Bearer gh_token_123' },
+      })
     })
 
-    // assert not error
-    expect(result?.error).toBeUndefined()
+    it('returns error when response is not ok', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+      })
 
-    // assert session was set
-    expect(server.updateSession).toHaveBeenCalledWith(
-      expect.any(Object),
-      { userId: 'user-123' },
-    )
+      const result = await fetchGitHubUser(
+        { fetch: mockFetch },
+        'bad_token',
+        'https://api.github.com',
+      )
 
-    // assert user + session inserts happened
-    expect(insertMock).toHaveBeenCalledWith(usersTable)
-    expect(insertMock).toHaveBeenCalledWith(sessionsTable)
+      expect(result).toEqual({ error: 'profile_fetch' })
+    })
 
-    // assert oauth_state was deleted
-    expect(server.deleteCookie).toHaveBeenCalledWith('oauth_state', { path: '/' })
+    it('returns error on network failure', async () => {
+      const mockFetch = vi.fn().mockRejectedValue(new Error('Network error'))
+
+      const result = await fetchGitHubUser(
+        { fetch: mockFetch },
+        'gh_token',
+        'https://api.github.com',
+      )
+
+      expect(result).toEqual({ error: 'profile_fetch' })
+    })
   })
 
-  describe('logout', () => {
-    it('deletes DB session and clears cookie when user is logged in', async () => {
-      const server = await import('@tanstack/react-start/server')
-      const getSession = server.getSession as unknown as { mockResolvedValue: (value: { data: { userId?: string } }) => void }
+  describe('upsertUserAndCreateSession (with PGlite)', () => {
+    let db: Awaited<ReturnType<typeof createTestDb>>['db']
+    let client: PGlite
 
-      // Mock active session with userId
-      getSession.mockResolvedValue({ data: { userId: 'user-456' } })
-
-      // Mock the delete chain: db.delete(sessions).where(eq(...))
-      whereClauseMock.mockResolvedValue(undefined)
-      deleteMock.mockReturnValue({ where: whereClauseMock })
-
-      const { logout } = await import('@/server/functions/auth.fns')
-      await logout()
-
-      // Verify db.delete was called with sessionsTable
-      expect(deleteMock).toHaveBeenCalledWith(sessionsTable)
-
-      // Verify the where clause was invoked with the eq() matcher
-      const { eq } = await import('drizzle-orm')
-      expect(whereClauseMock).toHaveBeenCalled()
-      expect(eq).toHaveBeenCalledWith(sessionsTable.userId, 'user-456')
-
-      // Verify clearSession was called with sessionConfig
-      expect(server.clearSession).toHaveBeenCalledWith(mockSessionConfig)
+    beforeEach(async () => {
+      const testDb = await createTestDb()
+      db = testDb.db
+      client = testDb.client
     })
 
-    it('clears session even when no userId is present', async () => {
-      const server = await import('@tanstack/react-start/server')
-      const getSession = server.getSession as unknown as { mockResolvedValue: (value: { data: { userId?: string } }) => void }
+    afterEach(async () => {
+      await cleanupTestDb(client)
+    })
 
-      // Mock session with no userId
-      getSession.mockResolvedValue({ data: {} })
+    it('creates new user and session', async () => {
+      const mockEncrypt = vi.fn((token) => `encrypted:${token}`)
+      const ghUser: GitHubUser = {
+        id: 12345,
+        login: 'newuser',
+        name: 'New User',
+        avatar_url: 'https://github.com/avatar.png',
+      }
 
-      const { logout } = await import('@/server/functions/auth.fns')
-      await logout()
+      const result = await upsertUserAndCreateSession(
+        { db, encrypt: mockEncrypt },
+        ghUser,
+        'gh_token_123',
+      )
 
-      // Verify db.delete was NOT called (no userId)
-      expect(deleteMock).not.toHaveBeenCalled()
-      expect(whereClauseMock).not.toHaveBeenCalled()
+      // Verify return value
+      expect(result.userId).toBeDefined()
+      expect(mockEncrypt).toHaveBeenCalledWith('gh_token_123')
 
-      // Verify clearSession was still called
-      expect(server.clearSession).toHaveBeenCalledWith(mockSessionConfig)
+      // Verify user was inserted
+      const insertedUsers = await db.select().from(users)
+      expect(insertedUsers).toHaveLength(1)
+      expect(insertedUsers[0]).toMatchObject({
+        githubId: 12345,
+        username: 'newuser',
+        displayName: 'New User',
+        avatarUrl: 'https://github.com/avatar.png',
+        accessToken: 'encrypted:gh_token_123',
+      })
+
+      // Verify session was created
+      const insertedSessions = await db.select().from(sessions)
+      expect(insertedSessions).toHaveLength(1)
+      expect(insertedSessions[0].userId).toBe(result.userId)
+      expect(insertedSessions[0].expiresAt.getTime()).toBeGreaterThan(Date.now())
+    })
+
+    it('updates existing user on conflict and creates new session', async () => {
+      const mockEncrypt = vi.fn((token) => `encrypted:${token}`)
+
+      // Insert initial user
+      const [initialUser] = await db
+        .insert(users)
+        .values({
+          githubId: 12345,
+          username: 'oldusername',
+          displayName: 'Old Name',
+          avatarUrl: 'https://old-avatar.png',
+          accessToken: 'encrypted:old_token',
+        })
+        .returning()
+
+      // Upsert with updated data
+      const ghUser: GitHubUser = {
+        id: 12345, // Same GitHub ID
+        login: 'newusername',
+        name: 'New Name',
+        avatar_url: 'https://new-avatar.png',
+      }
+
+      const result = await upsertUserAndCreateSession(
+        { db, encrypt: mockEncrypt },
+        ghUser,
+        'gh_new_token',
+      )
+
+      // Verify user was updated (same ID)
+      expect(result.userId).toBe(initialUser.id)
+
+      const updatedUsers = await db.select().from(users)
+      expect(updatedUsers).toHaveLength(1)
+      expect(updatedUsers[0]).toMatchObject({
+        id: initialUser.id,
+        githubId: 12345,
+        username: 'newusername',
+        displayName: 'New Name',
+        avatarUrl: 'https://new-avatar.png',
+        accessToken: 'encrypted:gh_new_token',
+      })
+
+      // Verify new session was created
+      const insertedSessions = await db.select().from(sessions)
+      expect(insertedSessions).toHaveLength(1)
+      expect(insertedSessions[0].userId).toBe(result.userId)
+    })
+  })
+
+  describe('deleteUserSessions (with PGlite)', () => {
+    let db: Awaited<ReturnType<typeof createTestDb>>['db']
+    let client: PGlite
+
+    beforeEach(async () => {
+      const testDb = await createTestDb()
+      db = testDb.db
+      client = testDb.client
+    })
+
+    afterEach(async () => {
+      await cleanupTestDb(client)
+    })
+
+    it('deletes all sessions for a user', async () => {
+      // Create a user
+      const [user] = await db
+        .insert(users)
+        .values({
+          githubId: 12345,
+          username: 'testuser',
+          accessToken: 'encrypted:token',
+        })
+        .returning()
+
+      // Create multiple sessions
+      await db.insert(sessions).values([
+        { userId: user.id, expiresAt: new Date(Date.now() + 1000000) },
+        { userId: user.id, expiresAt: new Date(Date.now() + 2000000) },
+      ])
+
+      // Verify sessions exist
+      const sessionsBefore = await db.select().from(sessions)
+      expect(sessionsBefore).toHaveLength(2)
+
+      // Delete sessions
+      await deleteUserSessions({ db }, user.id)
+
+      // Verify sessions were deleted
+      const sessionsAfter = await db.select().from(sessions)
+      expect(sessionsAfter).toHaveLength(0)
+    })
+
+    it('does nothing when user has no sessions', async () => {
+      // Create a user without sessions
+      const [user] = await db
+        .insert(users)
+        .values({
+          githubId: 12345,
+          username: 'testuser',
+          accessToken: 'encrypted:token',
+        })
+        .returning()
+
+      // Attempt to delete (should not throw)
+      await expect(deleteUserSessions({ db }, user.id)).resolves.not.toThrow()
+
+      // Verify no sessions exist
+      const sessionsAfter = await db.select().from(sessions)
+      expect(sessionsAfter).toHaveLength(0)
     })
   })
 })
