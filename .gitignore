@@ -1,34 +1,29 @@
-node_modules
-.DS_Store
-dist
-dist-ssr
-*.local
-count.txt
+# Rust
+/target
+# Note: Cargo.lock IS committed for binary crates (applications)
+
+# Environment
 .env
 .env.local
-.env.production.local
-.nitro
-.tanstack
-.wrangler
-.output
-.vinxi
-todos.json
+.env.production
 
-# Test coverage
-coverage/
-
-# Playwright
-test-results/
-playwright-report/
-
-# Drizzle (meta/ and .sql migrations ARE committed — they're the migration history)
+# macOS
+.DS_Store
 
 # Editor
 *.swp
 *.swo
 *~
+.vscode/
+.idea/
 
+# Test artifacts
+test-results/
+coverage/
 
-# Added by cargo
+# Runtime artifacts
+count.txt
+todos.json
 
-/target
+# Issuance output
+.issuance/
