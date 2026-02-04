@@ -27,3 +27,8 @@ playwright-report/
 *.swp
 *.swo
 *~
+
+
+# Added by cargo
+
+/target

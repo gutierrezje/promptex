@@ -1,296 +1,541 @@
-# Issuance - GitHub Issue Productivity Tool
+# Issuance - Context Orchestrator
 
-## Summary
-High-productivity tool connecting devs to impactful open-source issues. Discover high-visibility/low-competition repos and issues, monitor activity across subscriptions, and draft quality contributions with AI-assisted context analysis and quality gates.
+## The Problem
+
+The biggest friction isn't finding an issue; it's the **2 hours you spend orienting yourself**:
+- "How do I build this?"
+- "Where is the relevant code?"
+- "What is the maintainer's vibe?"
+
+## The Philosophy
+
+**Issuance curates, validates, and stages context so language tooling and LLMs can do their best work.**
+
+It's not a static analysis engine. It's not an AI agent replacement.
+It's a **Context Orchestrator**.
+
+**3-Stage Pipeline:**
+```
+DISCOVER → STAGE → HANDOFF
+```
+
+1. **Discover** - Find what's worth working on
+2. **Stage** - Prepare high-signal context
+3. **Handoff** - Deliver to LLMs, editors, humans
+
+Everything else is noise.
+
+---
+
+## The Context Pack (v2)
+
+```
+.issuance/
+├── ISSUE.md      # Ground truth (GitHub API, no interpretation)
+├── CODEMAP.md    # Lightweight, tool-assisted file mapping
+├── SIGNALS.md    # Ambient signals (commits, CI, TODOs)
+├── RULES.md      # Contribution rules
+└── HANDOFF.md    # LLM-facing entry point (short, actionable)
+```
+
+**Key principle:** Assemble evidence, don't derive understanding.
+
+---
+
+## The Context Pack Files
+
+### 1. ISSUE.md - Ground Truth
+
+**Source:** GitHub API only. No interpretation.
+
+```markdown
+# Issue #1284: Async Session Race Condition
+
+**Repository:** fastapi/fastapi
+**Author:** @user123
+**Created:** 2024-01-15
+**Labels:** bug, async, needs-triage
+**Milestone:** v0.110.0
+**Linked PRs:** None
+
+## Description
+[Raw text of the issue, unedited...]
+
+## Comments (12 total)
+
+### @tiangolo (Maintainer) - 2024-01-16
+I think this is related to the `dependency_overrides` logic in `dependants.py`.
+
+### @user123 - 2024-01-16
+Here is a traceback:
+```
+Traceback (most recent call last):
+  File "fastapi/dependencies/utils.py", line 234
+  ...
+```
+
+### @contributor - 2024-01-17
+I can confirm this on Python 3.11 with uvicorn 0.25.0
+```
+
+**Mirrors better-context's "don't editorialize" philosophy.**
+
+### 2. CODEMAP.md - Tool-Assisted File Mapping
+
+**How it's generated:**
+1. Extract keywords from issue text (filenames, symbols)
+2. Run existing project tools if present:
+   - `tsc --noEmit --pretty false`
+   - `ruff check --statistics`
+   - `go list ./...`
+   - `cargo metadata`
+3. Capture file paths, module boundaries, public signatures (only if cheap)
+
+```markdown
+# Code Map for Issue #1284
+
+## Suspected Files
+- src/dependencies/utils.py (mentioned in traceback)
+- src/dependencies/dependants.py (mentioned by maintainer)
+- src/routing.py (imports dependants)
+
+## Related Modules
+- fastapi.dependencies
+- fastapi.routing
+
+## Existing Tool Signals
+- TypeScript errors: none
+- Lint warnings in utils.py: 2 (unused import, line too long)
+- Test coverage: tests/test_dependencies.py exists
+```
+
+**Key insight:** Surfacing where to look, not what to think.
+
+### 3. SIGNALS.md - Ambient Context (NEW)
+
+This is something better-context doesn't do. Issuance collects ambient signals:
+
+```markdown
+# Signals for Issue #1284
+
+## Recent Activity
+- utils.py modified 6 times in last 30 days
+- Last commit: "fix: handle None in dependency resolution" (3 days ago)
+
+## Related Issues
+- #1280: "Race condition in async middleware" (open)
+- #1256: "Dependency injection fails with nested deps" (closed)
+
+## CI Status
+- Last run on main: PASSED (2 hours ago)
+- Relevant test file: tests/test_dependencies.py (all passing)
+
+## Code Health
+- TODO/FIXME in utils.py: 2
+- No tests exist for `solve_dependencies()` specifically
+```
+
+**Human-grade context that LLMs reason over excellently.**
+
+### 4. RULES.md - Contribution Rules
+
+```markdown
+# Contribution Rules for fastapi/fastapi
+
+## Commit Convention
+**Conventional Commits required.** Use `feat:`, `fix:`, `docs:` prefixes.
+
+## Testing
+**Required.** 98% of merged PRs include tests.
+Run: `pytest tests/test_dependencies.py -v`
+
+## Style
+- Formatter: `black`
+- Linter: `ruff`
+- Run: `black . && ruff check .`
+
+## Review Process
+- Average review time: 48 hours
+- Required approvals: 1
+- Primary reviewer for async: @tiangolo
+
+## Don'ts
+- Don't modify `pyproject.toml` without asking
+- Don't import from `starlette` directly (use `fastapi.` wrappers)
+- Don't squash commits yourself (maintainers do this)
+```
+
+### 5. HANDOFF.md - The LLM Entry Point (SECRET WEAPON)
+
+**Short. Very short.** This is where Issuance beats better-context.
+
+```markdown
+You are working in the repository `fastapi/fastapi`.
+
+Your goal: Fix the issue described in ISSUE.md.
+
+Constraints:
+- Follow RULES.md
+- Do not invent file paths
+- Ask for clarification only after reviewing CODEMAP.md
+
+Suggested approach:
+1. Inspect utils.py and dependants.py (see CODEMAP.md)
+2. Review SIGNALS.md for recent changes
+3. Run existing tests before making changes
+4. Add tests if behavior is unclear
+```
+
+**This is the alignment layer. The AI already knows where to look.**
+
+---
+
+## CLI Commands
+
+### `issuance grab <url>`
+Fetches the issue and generates the full context pack.
+
+```bash
+$ issuance grab https://github.com/fastapi/fastapi/issues/1284
+
+✓ Cloning fastapi/fastapi (shallow)
+✓ Fetching issue #1284 (12 comments)
+✓ Running language tools...
+  ✓ ruff check --statistics
+  ✓ pytest --collect-only
+✓ Extracting signals (commits, related issues)
+✓ Generating context pack
+
+📁 .issuance/ ready
+
+Files created:
+  ISSUE.md      (ground truth)
+  CODEMAP.md    (suspected files + tool output)
+  SIGNALS.md    (commits, CI, related issues)
+  RULES.md      (contribution rules)
+  HANDOFF.md    (LLM entry point)
+
+Next: Open your AI tool and say "Fix the issue in .issuance/HANDOFF.md"
+```
+
+**No API calls.** But can optionally invoke local AI harnesses (Claude Code, Cursor) for enhancement.
+
+### `issuance profile <repo>`
+Analyzes repo culture standalone (useful before grabbing issues).
+
+```bash
+$ issuance profile fastapi/fastapi
+
+✓ Fetching last 50 merged PRs
+✓ Analyzing commit conventions
+✓ Extracting review patterns
+✓ Checking CI config
+
+📄 .issuance/RULES.md created
+
+Summary:
+  - Commits: Conventional Commits required
+  - Tests: Required (98% of PRs)
+  - Review: ~48 hours, 1 approval
+  - Style: black + ruff
+```
+
+### `issuance clean`
+Wipes the context folder.
+
+```bash
+$ issuance clean
+✓ Removed .issuance/
+```
+
+---
+
+## Differentiation from better-context
+
+| | better-context | Issuance |
+|---|----------------|----------|
+| **Mode** | Query-based | Task-based |
+| **Goal** | "Ask questions" | "Prepare to act" |
+| **Scope** | Global context | Issue-scoped |
+| **Use case** | Tooling for learning | Tooling for shipping |
+| **Interaction** | Runtime conversation | Pre-work orchestration |
+
+**That's a clean, defensible distinction.**
+
+---
+
+## Why This Architecture Wins
+
+1. **Zero Marginal Cost** - GitHub API + existing language tools only
+2. **Deterministic** - Same input → same output, every time
+3. **Debuggable** - You can read and edit every file
+4. **Model Agnostic** - Works with Cursor, Claude Code, Copilot, whatever wins next week
+5. **Uses the Ecosystem** - Runs `ruff`, `tsc`, `pytest` instead of reinventing them
+6. **Composable** - Each file is standalone, use what you need
+
+---
+
+## What NOT to Build
+
+- ❌ Custom AST walkers (use existing language tools)
+- ❌ Deep call graph logic (LLMs handle this)
+- ❌ Cross-language parsing (out of scope)
+- ❌ MCP server (not a conversational assistant)
+- ❌ Per-call API payments (use subscription-based local tools)
+- ❌ Global repo index (issue-scoped only)
+
+---
+
+## Optional: Local AI Enhancement
+
+The CLI doesn't have to be "dumb." If you have Claude Code or Cursor installed, issuance can invoke them to enhance output:
+
+### Enhancement Modes
+
+**`issuance grab --enhance`**
+
+After generating the base context pack, pipes it through Claude Code:
+
+```bash
+$ issuance grab https://github.com/fastapi/fastapi/issues/1284 --enhance
+
+✓ Base context generated (5 files)
+✓ Invoking Claude Code for enhancement...
+  ✓ CODEMAP.md: Added likely root cause analysis
+  ✓ HANDOFF.md: Refined suggested approach
+
+📁 .issuance/ ready (enhanced)
+```
+
+**How it works:**
+1. `issuance` generates base files deterministically (GitHub API + language tools)
+2. If `--enhance` flag, invokes `claude` CLI with a specific prompt
+3. Claude Code uses your existing subscription (no API cost)
+
+---
 
 ## Tech Stack
-| Layer | Choice |
-|-------|--------|
-| Framework | TanStack Start (beta, full-stack SSR) |
-| Database | PostgreSQL (Neon free tier) + Drizzle ORM |
-| Auth | GitHub OAuth 2.0 (custom, no library) |
-| Sessions | TanStack Start built-in encrypted sessions |
-| AI | Gemini 3.0 Flash via `@google/genai` (free tier) |
-| Runtime + Package Manager | Bun (full runtime) |
-| GitHub API | `octokit` |
-| Styling | Tailwind CSS v4, Radix UI primitives |
-| Testing | Vitest + Testing Library (unit), Playwright (e2e) |
-| Hosting | Vercel (free) |
 
-## Database Schema (9 tables)
+### CLI Tool (Rust)
+| Component | Choice | Reason |
+|-----------|--------|--------|
+| Language | Rust | Single binary, fast startup, impressive for portfolio |
+| CLI Framework | clap | Industry standard, derive macros |
+| HTTP Client | reqwest | Async, robust |
+| GitHub API | octocrab | Type-safe GitHub API client |
+| Async Runtime | tokio | De facto standard |
+| Serialization | serde + serde_json | JSON/TOML parsing |
+| Templating | tera | Jinja2-like syntax |
+| Terminal UI | indicatif + console | Progress bars, colors, styling |
+| Config | TOML (~/.issuance/config.toml) | Standard, editable |
+| Output | Markdown files | Human-readable, AI-consumable |
 
-**users** - `id`, `github_id` (unique), `username`, `display_name`, `avatar_url`, `access_token` (encrypted), timestamps
+### Why Rust Over Python
+- **Single binary distribution** - No runtime deps, just download and run
+- **~5ms startup** vs ~200ms+ for Python - matters for CLI tools
+- **Interview story** - "I built a Rust CLI" >> "I built a Python CLI"
+- **Type safety** - Catches bugs at compile time
+- **Learning opportunity** - Great project scope for Rust
 
-**sessions** - `id`, `user_id` FK, `expires_at`, timestamps (optional if cookie-only sessions suffice)
-
-**subscriptions** - `id`, `user_id` FK, `repo_owner`, `repo_name`, `webhook_id`, `webhook_secret`, `last_synced_at`, timestamps. UNIQUE(user_id, repo_owner, repo_name)
-
-**github_events** - `id`, `github_event_id` (unique, dedup), `repo_owner`, `repo_name`, `event_type` (issue_opened, issue_comment, push, pr_opened, release, etc.), `title`, `body`, `actor_username`, `actor_avatar`, `metadata` (JSONB), `github_url`, `occurred_at`, timestamps. Indexed on (repo_owner, repo_name, occurred_at DESC). **Shared across users** - no per-user duplication.
-
-**cached_issues** - `id`, `repo_owner`, `repo_name`, `issue_number`, `title`, `body`, `state`, `author_username`, `labels` (JSONB), `assignees` (JSONB), `comment_count`, `github_url`, GitHub timestamps, `synced_at`. UNIQUE(repo_owner, repo_name, issue_number)
-
-**ai_drafts** - `id`, `user_id` FK, `issue_id` FK, `repo_owner`, `repo_name`, `issue_number`, `draft_type` (response/assignee_suggestion), `content`, `status` (pending/accepted/discarded), `model_used`, timestamps
-
-**repo_ai_insights** - `id`, `repo_owner`, `repo_name`, `insight_type` (triage/label_suggestion/digest/stale_detection/contribution_score), `target_issue_number` (nullable), `content` (JSONB), `model_used`, `generated_at`, timestamps. UNIQUE(repo_owner, repo_name, insight_type, target_issue_number)
-
-**repo_scores** - `id`, `repo_owner`, `repo_name`, `stars`, `open_issues_count`, `contributor_count`, `avg_issue_response_hours` (nullable), `maintainer_activity_score` (0-100), `contribution_opportunity_score` (0-100, computed: high stars + low contributors + slow response = high score), `last_scored_at`, timestamps. UNIQUE(repo_owner, repo_name)
-
-**issue_scores** - `id`, `repo_owner`, `repo_name`, `issue_number`, `labels` (JSONB), `has_good_first_issue` (bool), `has_help_wanted` (bool), `comment_count`, `linked_pr_count`, `days_since_last_activity`, `has_repro` (bool, AI-assessed), `has_clear_description` (bool, AI-assessed), `contribution_fit_score` (0-100), `last_scored_at`, timestamps. UNIQUE(repo_owner, repo_name, issue_number)
+---
 
 ## Project Structure
+
 ```
 issuance/
-├── app.config.ts
-├── drizzle.config.ts
-├── vitest.config.ts
-├── playwright.config.ts
-├── drizzle/                         # Migration SQL files
-├── app/
-│   ├── client.tsx, ssr.tsx, router.tsx
-│   ├── routes/
-│   │   ├── __root.tsx               # HTML shell, nav, auth context
-│   │   ├── index.tsx                # Landing / redirect
-│   │   ├── login.tsx
-│   │   ├── auth/
-│   │   │   ├── github.tsx           # Initiate OAuth
-│   │   │   └── github.callback.tsx  # Handle callback
-│   │   ├── _authed.tsx              # Auth guard layout
-│   │   ├── _authed/
-│   │   │   ├── dashboard.tsx        # Main newsfeed
-│   │   │   ├── discover.tsx         # Issue discovery - high visibility/low competition
-│   │   │   ├── issues.tsx           # Issues list
-│   │   │   ├── issues.$issueId.tsx  # Issue detail + context panel + AI draft
-│   │   │   ├── commits.tsx
-│   │   │   ├── pulls.tsx
-│   │   │   ├── releases.tsx
-│   │   │   ├── subscriptions.tsx    # Manage repo subscriptions
-│   │   │   └── settings.tsx
-│   │   └── api/
-│   │       ├── webhooks.github.ts   # GitHub webhook receiver
-│   │       └── cron.insights.ts     # Vercel Cron: repo-level AI inference
-│   ├── components/
-│   │   ├── ui/                      # Button, Card, Input, Dialog
-│   │   ├── layout/                  # AppShell, Sidebar, TopBar
-│   │   ├── feed/                    # FeedItem, FeedList, FeedFilters
-│   │   ├── issues/                  # IssueCard, IssueDetail, IssueTimeline
-│   │   ├── ai/                      # DraftPanel, DraftActions, ContextPanel, QualityGate
-│   │   ├── discover/                # ScoreCard, DiscoverFilters, OpportunityList
-│   │   └── subscriptions/           # RepoSearch, RepoList
-│   ├── server/
-│   │   ├── db/
-│   │   │   ├── index.ts             # Drizzle client (neon-http driver)
-│   │   │   └── schema.ts            # All table definitions
-│   │   ├── functions/               # createServerFn definitions
-│   │   │   ├── auth.fns.ts
-│   │   │   ├── subscriptions.fns.ts
-│   │   │   ├── feed.fns.ts
-│   │   │   ├── issues.fns.ts
-│   │   │   ├── drafts.fns.ts
-│   │   │   ├── github.fns.ts
-│   │   │   └── sync.fns.ts
-│   │   ├── services/
-│   │   │   ├── github.service.ts    # Octokit wrapper, rate limits, ETags
-│   │   │   ├── gemini.service.ts    # Gemini API, prompt templates, rate tracking
-│   │   │   ├── insights.service.ts  # Scheduled repo-level AI inference
-│   │   │   ├── scoring.service.ts   # Repo + issue scoring for discovery
-│   │   │   ├── sync.service.ts      # Polling/sync orchestration
-│   │   │   └── webhook.service.ts   # Webhook payload processing
-│   │   ├── middleware/
-│   │   │   └── auth.middleware.ts
-│   │   └── lib/
-│   │       ├── session.ts           # TanStack Start session config
-│   │       ├── crypto.ts            # Token encryption, CSRF
-│   │       └── rate-limit.ts        # In-memory rate limit tracker
-│   ├── lib/
-│   │   ├── utils.ts
-│   │   └── constants.ts
-│   └── styles/globals.css
-├── tests/
-│   ├── unit/                        # Services, schema, components, utils
-│   ├── integration/                 # Auth flow, subscriptions, feed, drafts
-│   └── e2e/                         # Login, dashboard, subscriptions, drafts
-└── public/
+├── Cargo.toml              # Dependencies + metadata
+├── src/
+│   ├── main.rs             # Entry point, clap CLI setup
+│   ├── config.rs           # Config loading (~/.issuance/config.toml)
+│   ├── commands/
+│   │   ├── mod.rs
+│   │   ├── grab.rs         # issuance grab <url>
+│   │   ├── profile.rs      # issuance profile <repo>
+│   │   └── clean.rs        # issuance clean
+│   ├── services/
+│   │   ├── mod.rs
+│   │   ├── github.rs       # GitHub API (issues, PRs, commits)
+│   │   ├── tools.rs        # Run language-native tools (ruff, tsc)
+│   │   ├── extractor.rs    # Keyword/file extraction (no LLM)
+│   │   ├── profiler.rs     # PR pattern analysis
+│   │   └── generator.rs    # Render templates → context files
+│   └── templates/
+│       ├── mod.rs          # Template embedding
+│       ├── issue.md.tera
+│       ├── codemap.md.tera
+│       ├── signals.md.tera
+│       ├── rules.md.tera
+│       └── handoff.md.tera
+├── README.md
+└── tests/
+    ├── extractor_test.rs
+    ├── profiler_test.rs
+    └── generator_test.rs
 ```
 
-## Data Fetching Strategy
+**No database. No server. No LLM calls.**
+The `.issuance/` folder IS the output.
 
-**Hybrid: Webhooks + Polling Fallback**
-- On subscribe: attempt to register a GitHub webhook (requires repo admin). Falls back to polling if no permission.
-- Polling: uses GitHub Events API with ETag-based conditional requests to avoid wasting rate limit.
-- Client-side: 60-second polling interval while tab is active.
-- Stale check: if `last_synced_at` > 5 minutes old on page load, trigger background sync.
-- Multi-user efficiency: events stored per-repo, not per-user. Multiple users subscribing to the same repo share one event set.
-- Rate limit awareness: tracks `x-ratelimit-remaining` from GitHub responses; throttles/stops polling as limits approach.
-
-## AI Inference Strategy
-
-### Per-Repo Scheduled Inference (shared across users, cost-efficient)
-Runs on a cron schedule (every 4 hours) per subscribed repo. Results shared across all users subscribed to that repo.
-
-**Repo-level AI jobs:**
-- **Issue triage**: Classify new/updated open issues (bug/feature/question/docs) + priority estimate
-- **Label suggestions**: Batch-suggest labels for unlabeled issues
-- **Repo activity digest**: 2-3 sentence summary of recent activity, shown on dashboard
-- **Stale issue detection**: Flag issues with no activity in 14+ days
-
-**New table: `repo_ai_insights`**
-- `id`, `repo_owner`, `repo_name`, `insight_type` (triage/label_suggestion/digest/stale_detection), `target_issue_number` (nullable), `content` (JSONB), `model_used`, `generated_at`, timestamps
-- UNIQUE(repo_owner, repo_name, insight_type, target_issue_number)
-
-**Scheduling**: Vercel Cron (free tier: 2 cron jobs). Cron endpoint iterates subscribed repos, skips recently processed ones, runs inference sequentially to stay within rate limits.
-
-### Per-User On-Demand Inference
-Triggered when user clicks "Generate Draft" on a specific issue.
-
-**User-level AI jobs:**
-- **Response drafts**: Full draft reply to an issue
-- **Assignee suggestions**: Based on user's team context
-
-### Combined Flow
-1. Cron runs every 4h -> processes repos -> stores insights in `repo_ai_insights`
-2. User opens dashboard -> sees repo digests and triaged issues (from shared insights)
-3. User opens issue -> sees pre-computed label suggestions (shared) + can generate personal draft (on-demand)
-4. User clicks "Generate Draft" -> Gemini call -> stored in `ai_drafts` (per-user)
-5. Rate limit tracking across both paths to stay within free tier
-
-## Issue Discovery & Scoring
-
-### Repo Scoring
-Repos are scored for contribution opportunity: `high stars + low contributor count + slow avg response time = high opportunity`.
-- **Data sources**: GitHub API `/repos/{owner}/{repo}` (stars, open_issues), `/repos/{owner}/{repo}/contributors` (count), `/repos/{owner}/{repo}/issues?sort=created` (response time sampling)
-- **Score formula**: `opportunity = normalize(stars) * 0.3 + normalize(1/contributors) * 0.3 + normalize(avg_response_hours) * 0.2 + normalize(open_issues) * 0.2`
-- Scored during cron job. Users can also search/add repos manually; scoring happens on subscribe.
-
-### Issue Scoring
-Issues within subscribed repos scored for "contribution fit":
-- **Automatic signals** (from GitHub API): `good first issue` / `help wanted` labels, comment count (low = less competition), linked PR count (0 = unclaimed), days since last activity
-- **AI-assessed signals** (from Gemini during cron): has reproduction steps, has clear description, estimated complexity
-- **Score**: weighted combination. High score = good candidate for contribution.
-
-### Discovery Page (`/discover`)
-- Shows top-scored issues across all subscribed repos, sorted by contribution fit
-- Filters: language, label, complexity, repo
-- Each issue card shows: repo name, issue title, score breakdown, labels, age, competition level (comment/PR count)
-
-## Contribution Quality Gate
-
-### Context-First Flow (before any draft)
-When a user opens an issue to potentially contribute, they see an **Issue Context Panel**:
-1. **AI Summary**: What the issue is about, what's been discussed, current status
-2. **Context Checklist** (AI-assessed, user-verifiable):
-   - [ ] Has reproduction steps or clear description
-   - [ ] Has environment/version info (if applicable)
-   - [ ] Not already being worked on (no linked PRs)
-   - [ ] Not a duplicate of another issue
-   - [ ] Maintainer has acknowledged / labeled the issue
-   - [ ] User has relevant expertise for this issue
-3. **Existing Discussion Summary**: Key points from comments so far
-4. User reviews checklist. Only after engaging with context can they click "Draft Response".
-
-### Draft Quality Gate (after generating draft)
-The AI draft includes a self-assessment:
-- **Value Check**: Does this response add new information vs. repeating existing comments?
-- **Specificity Check**: Is this actionable, or is it generic "I can help" noise?
-- **Qualification Check**: Does the response demonstrate understanding of the codebase/problem?
-- Rating: Green (high value) / Yellow (review carefully) / Red (likely not valuable, reconsider)
-
-The user sees the rating before copying/posting. Red-rated drafts show a warning encouraging the user to reconsider.
-
-## Auth Flow
-1. User clicks "Sign in with GitHub" -> redirect to GitHub OAuth
-2. GitHub redirects back with code -> exchange for access token
-3. Upsert user in DB, encrypt token, create encrypted session cookie
-4. `_authed.tsx` layout guard checks session on all protected routes
-5. Scopes: `repo` (read repos, create webhooks) + `read:user`
+---
 
 ## Implementation Phases
 
-### Phase 1: Foundation
-- Init TanStack Start project with Bun, TS strict mode, Tailwind v4
-- Set up Drizzle + Neon, define full schema, run migrations
-- Basic layout: `__root.tsx`, `AppShell`, `Sidebar`
-- Vitest config + first schema test
+### Phase 1: CLI Scaffold (✅ COMPLETE)
 
-### Phase 2: Authentication
-- GitHub OAuth App setup
-- Session config, `/login`, `/auth/github`, `/auth/github/callback`
-- `getSession` server fn, `auth.middleware.ts`, `_authed.tsx` guard
-- Auth integration tests
+**Goal:** Basic CLI structure, `issuance --help` works
 
-### Phase 3: Subscriptions + GitHub Sync
-- `subscriptions.tsx` page, `RepoSearch`, `RepoList`
-- `github.service.ts` (Octokit, rate limits, ETags)
-- Subscribe/unsubscribe server fns, `sync.service.ts`
-- Webhook registration + `/api/webhooks/github` with HMAC validation
-- Unit tests for GitHub service + sync service
+**Deliverable:**
+```bash
+$ issuance --help
+Commands:
+  grab     Fetch an issue and generate context pack
+  profile  Analyze repo contribution culture
+  clean    Remove .issuance/ folder
+```
 
-### Phase 4: Dashboard / Newsfeed
-- `getFeed` server fn with cursor pagination
-- `FeedList` (virtualized with `@tanstack/react-virtual`), `FeedItem`, `FeedFilters`
-- Auto-refresh polling, dark Bloomberg-style theme
-- Component tests
+**Status:** Complete. All commands parse correctly, clean command fully functional.
 
-### Phase 5: Issues View
-- `issues.tsx` list, `issues.$issueId.tsx` detail
-- `IssueCard`, `IssueTimeline`, `IssueDetail`
-- On-demand comment fetching with in-memory TTL cache
+---
 
-### Phase 6: Repo + Issue Scoring & Discovery
-- `scoring.service.ts` - repo opportunity scoring, issue contribution-fit scoring
-- `repo_scores` and `issue_scores` tables + migrations
-- `/discover` page with scored issue list, filters, score breakdowns
-- Scoring runs during cron + on new subscription
-- Unit tests for scoring logic
+### Phase 2: `issuance grab` - Core Pipeline (IN PROGRESS)
 
-### Phase 7: AI - Repo-Level Insights (Shared)
-- `insights.service.ts` - batch issue triage, label suggestions, activity digests, stale detection
-- AI-assessed issue signals (has_repro, has_clear_description) fed into issue_scores
-- `repo_ai_insights` table
-- `/api/cron.insights.ts` Vercel Cron endpoint
-- `gemini.service.ts` with prompt templates and rate tracking
-- Unit tests with mocked Gemini
+**Goal:** Full context pack generation
 
-### Phase 8: AI - Context Panel + Quality Gate + Drafts
-- **Context Panel**: AI summary of issue, context checklist (repro, env, duplicates, linked PRs, maintainer acknowledgment)
-- **Draft generation**: `generateDraft`, `getDrafts`, `updateDraftStatus` server fns
-- **Quality Gate**: AI self-assessment of draft (value/specificity/qualification checks, green/yellow/red rating)
-- `DraftPanel`, `ContextPanel`, `QualityGate` components
-- User must engage with context before drafting
-- Unit tests with mocked Gemini
+**Files:**
+```
+src/
+├── commands/grab.rs
+├── services/
+│   ├── github.rs       # Issue + comments + signals
+│   ├── tools.rs        # Run language-native tools
+│   ├── extractor.rs    # Keywords, file mentions
+│   └── generator.rs    # Generate all context files
+└── templates/
+    ├── issue.md.tera
+    ├── codemap.md.tera
+    ├── signals.md.tera
+    ├── rules.md.tera
+    └── handoff.md.tera
+```
 
-#### Draft Philosophy & Tonal Guidelines
-The goal of AI drafting is NOT to write comments for the user — it's to help them write comments that **get taken seriously by maintainers and move the conversation forward**. A technically correct comment with the wrong tone gets ignored or damages credibility.
+**`services/github.rs`:**
+```rust
+pub async fn fetch_issue(owner: &str, repo: &str, issue_num: u64) -> Result<Issue>
+pub async fn fetch_comments(owner: &str, repo: &str, issue_num: u64) -> Result<Vec<Comment>>
+pub async fn fetch_recent_commits(owner: &str, repo: &str, path: &str) -> Result<Vec<Commit>>
+pub async fn fetch_related_issues(owner: &str, repo: &str, keywords: &[String]) -> Result<Vec<Issue>>
+pub fn clone_repo(owner: &str, repo: &str, shallow: bool) -> Result<PathBuf>
+```
 
-**Core drafting principles:**
-- **Epistemic humility over certainty.** Prefer "It's possible that..." / "In my testing..." / "This might be..." over "The root cause is..." / "This is definitely...". The user may not fully understand the system internals, and overconfident language undermines trust when wrong.
-- **Show work, not conclusions.** A minimal reproduction with code blocks is worth more than a paragraph of analysis. The draft should prioritize concrete evidence (steps to reproduce, code snippets, environment details) over explanations.
-- **Leave room to be wrong.** Always hedge speculative analysis. "My guess is X, but I haven't verified in the source" is much stronger than "X causes Y" when the user can't defend the claim in follow-up comments.
-- **Match community tone.** Scan existing issue comments and match the formality level. Some projects are casual, some are formal. Never add emoji or exclamation marks unless the thread already uses them.
-- **Don't over-explain.** If the reproduction speaks for itself, don't add a speculative "Possible Explanation" section the user can't back up. Less is more — a clear repro with no analysis is better than a clear repro with wrong analysis.
-- **Frame contributions, not complaints.** "I found X" not "X is broken." "This might help narrow it down" not "You should fix this."
+**`services/tools.rs`:**
+```rust
+pub fn detect_project_type(repo_path: &Path) -> ProjectType  // Python, TypeScript, Go, Rust
+pub fn run_linter(repo_path: &Path, project_type: ProjectType) -> Result<LintOutput>
+pub fn run_test_discovery(repo_path: &Path, project_type: ProjectType) -> Result<Vec<String>>
+pub async fn get_ci_status(owner: &str, repo: &str) -> Result<CIStatus>
+```
 
-**Quality gate tonal checks (in addition to value/specificity/qualification):**
-- **Certainty calibration**: Does the draft state things as fact that the user may not be able to defend? Flag overconfident claims.
-- **Actionability**: Does every paragraph either provide evidence or ask a useful question? Remove filler.
-- **Tone match**: Is the formality appropriate for the project? Check against existing comments in the thread.
-- **Human-like writing**: Avoid patterns that read as AI-generated. No em dashes (use commas, periods, or parentheses instead). No "Furthermore" / "Additionally" / "It's worth noting" filler. No fancy unicode arrows or bullet decorations. Keep punctuation plain. Don't add a big header/title to the comment. The draft should read like a developer typed it in a text box, not like it was edited by a copywriter.
+**`services/extractor.rs`:**
+```rust
+pub fn extract_keywords(text: &str) -> Vec<String>  // filenames, symbols
+pub fn extract_mentioned_files(text: &str, repo_files: &[String]) -> Vec<String>
+pub fn extract_stack_traces(text: &str) -> Vec<StackTrace>
+```
 
-### Phase 9: Secondary Views
-- `commits.tsx`, `pulls.tsx`, `releases.tsx` (filter `github_events` by type)
+**Deliverable:** Full context pack with all 5 files.
 
-### Phase 10: Polish + E2E
-- Loading states, error boundaries, empty states
-- `settings.tsx` page
-- Playwright E2E tests for all major flows
-- Accessibility pass
+---
 
-### Phase 11: Deploy
-- Vercel deployment, env vars, Neon connection, webhook URL config
+### Phase 3: `issuance profile` (TODO)
+
+**Goal:** Standalone repo culture analysis
+
+**Files:**
+```
+src/
+├── commands/profile.rs
+└── services/profiler.rs
+```
+
+**`services/profiler.rs`:**
+```rust
+pub async fn fetch_merged_prs(owner: &str, repo: &str, limit: usize) -> Result<Vec<PullRequest>>
+pub fn analyze_commit_convention(prs: &[PullRequest]) -> CommitConvention
+pub fn analyze_test_requirements(prs: &[PullRequest]) -> TestRequirements
+pub fn analyze_review_patterns(prs: &[PullRequest]) -> ReviewPatterns
+pub fn analyze_merge_strategy(prs: &[PullRequest]) -> MergeStrategy
+pub fn parse_contributing_md(content: &str) -> ContributionGuide
+pub fn parse_ci_config(repo_path: &Path) -> Result<CIConfig>
+```
+
+**Deliverable:** RULES.md generated from PR analysis + config parsing.
+
+---
+
+### Phase 4: Polish (TODO)
+
+**Rich CLI output (indicatif + console):**
+- Progress spinners
+- Colored file summaries
+- Tables for signals
+
+**Config (`~/.issuance/config.toml`):**
+```toml
+[github]
+token = "ghp_xxx"
+
+[defaults]
+shallow_clone = true
+pr_limit = 50
+```
+
+**Tests:**
+- Unit tests for extractors
+- Integration test with real issue
+
+**Build & Distribute:**
+```bash
+cargo build --release
+# Binary at target/release/issuance (~5MB)
+```
+
+---
+
+## Timeline
+
+| Day | Phase | Deliverable |
+|-----|-------|-------------|
+| 1 | Scaffold | ✅ CLI structure, `issuance --help` works |
+| 2-4 | Grab | Full context pack generation (5 files) |
+| 5-6 | Profile | Standalone repo culture analysis |
+| 7-9 | Polish | Rich output, tests, installable binary |
+
+**Total: ~9 days**
+
+---
 
 ## Verification
-- `bun run dev` -> app runs locally, login with GitHub works
-- Subscribe to a repo -> events appear in feed within polling interval
-- Open an issue -> see repo-level insights (triage, labels) + generate personal draft
-- `bun run test` -> all unit + integration tests pass
-- `bunx playwright test` -> all e2e tests pass
-- `bunx tsc --noEmit` -> no type errors
+
+```bash
+# 1. Build
+cd issuance
+cargo build --release
+
+# 2. Install globally (optional)
+cargo install --path .
+
+# 3. Test grab
+issuance grab https://github.com/fastapi/fastapi/issues/1284
+ls .issuance/
+# Should see: ISSUE.md, CODEMAP.md, SIGNALS.md, RULES.md, HANDOFF.md
+
+# 4. Test profile (standalone)
+issuance profile fastapi/fastapi
+cat .issuance/RULES.md
+
+# 5. Full workflow
+cd ~/some-project
+issuance grab https://github.com/owner/repo/issues/123
+# Open Cursor / Claude Code
+# Say: "Fix the issue described in .issuance/HANDOFF.md"
+```
