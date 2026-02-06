@@ -3,6 +3,7 @@ use anyhow::Result;
 
 mod config;
 mod commands;
+mod services;
 
 #[derive(Parser)]
 #[command(name = "issuance")]
@@ -26,11 +27,6 @@ enum Commands {
     },
 
     /// Analyze repository contribution culture
-    Profile {
-        /// Repository in format owner/repo (e.g., fastapi/fastapi)
-        repo: String,
-    },
-
     /// Remove .issuance/ folder
     Clean,
 }
@@ -42,9 +38,6 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Grab { url, enhance } => {
             commands::grab::execute(&url, enhance).await?;
-        }
-        Commands::Profile { repo } => {
-            commands::profile::execute(&repo).await?;
         }
         Commands::Clean => {
             commands::clean::execute()?;

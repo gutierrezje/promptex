@@ -1,15 +1,18 @@
 # Issuance - Development Guidelines
 
 ## Project Overview
-Issuance is a **Rust CLI tool** that orchestrates context for AI-assisted open source contributions.
+Issuance is currently a **Rust CLI tool** that orchestrates context for AI-assisted open source contributions.
 
 ## Architecture
-This project has pivoted from TypeScript/TanStack to **Rust** for the CLI implementation.
+This project contains the **Rust** code for the CLI implementation.
 
 ## Project Documentation
-- **PRODUCT.md** - Product vision and user journey
-- **IMPLEMENTATION_STATUS.md** - Current implementation progress
-- **PLAN.md** (in CLAUDE.md below) - Full technical architecture and plan
+- **PLAN.md** - Full technical architecture and plan
+
+## Learning Mode (Default)
+- Implement basic plumbing directly.
+- Leave critical, educational opportunity, interesting parts unimplemented with guided TODOs.
+- Each TODO should include: purpose, inputs, outputs, edge cases, and suggested tests.
 
 ## Runtime & Build System
 Always use **cargo** for Rust development.
@@ -20,6 +23,9 @@ Always use **cargo** for Rust development.
 - `cargo run -- <args>` — run the CLI with arguments
 - `cargo test` — run tests
 - `./target/debug/issuance` — run the built CLI directly
+
+## Recommended Tools
+- `rust-analyzer` (editor integration)
 
 ## Development Workflow
 1. Make changes to Rust source files in `src/`

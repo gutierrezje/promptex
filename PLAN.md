@@ -9,7 +9,7 @@ The biggest friction isn't finding an issue; it's the **2 hours you spend orient
 
 ## The Philosophy
 
-**Issuance curates, validates, and stages context so language tooling and LLMs can do their best work.**
+**Issuance curates, validates, and stages context so AI tools can do their best work.**
 
 It's not a static analysis engine. It's not an AI agent replacement.
 It's a **Context Orchestrator**.
@@ -21,7 +21,7 @@ DISCOVER → STAGE → HANDOFF
 
 1. **Discover** - Find what's worth working on
 2. **Stage** - Prepare high-signal context
-3. **Handoff** - Deliver to LLMs, editors, humans
+3. **Handoff** - Deliver to AI tools, editors, humans
 
 Everything else is noise.
 
@@ -33,9 +33,9 @@ Everything else is noise.
 .issuance/
 ├── ISSUE.md      # Ground truth (GitHub API, no interpretation)
 ├── CODEMAP.md    # Lightweight, tool-assisted file mapping
-├── SIGNALS.md    # Ambient signals (commits, CI, TODOs)
-├── RULES.md      # Contribution rules
-├── HANDOFF.md    # LLM-facing entry point (short, actionable)
+├── SIGNALS.md    # Focused ambient signals (recent activity, related issues, CI)
+├── RULES.md      # Contribution rules (synthesized via local agentic CLI)
+├── HANDOFF.md    # AI tool entry point (short, actionable)
 ├── PROMPTS.md    # Your AI-assisted investigation journey (optional)
 └── metadata.json # Session metadata (timestamp, issue info)
 ```
@@ -80,7 +80,7 @@ Traceback (most recent call last):
 I can confirm this on Python 3.11 with uvicorn 0.25.0
 ```
 
-**Mirrors better-context's "don't editorialize" philosophy.**
+**Reinforces the "don't editorialize" principle.**
 
 ### 2. CODEMAP.md - Tool-Assisted File Mapping
 
@@ -113,33 +113,37 @@ I can confirm this on Python 3.11 with uvicorn 0.25.0
 
 **Key insight:** Surfacing where to look, not what to think.
 
-### 3. SIGNALS.md - Ambient Context (NEW)
+### 3. SIGNALS.md - Ambient Context (Focused)
 
-This is something better-context doesn't do. Issuance collects ambient signals:
+Issuance collects a small, high-signal set of ambient context that should change your next
+action within 5 minutes of reading the issue. If it doesn't, it doesn't belong here.
 
 ```markdown
 # Signals for Issue #1284
 
 ## Recent Activity
-- utils.py modified 6 times in last 30 days
-- Last commit: "fix: handle None in dependency resolution" (3 days ago)
+- 2024-02-01: "fix: handle None in dependency resolution" (a1b2c3d)
 
 ## Related Issues
 - #1280: "Race condition in async middleware" (open)
-- #1256: "Dependency injection fails with nested deps" (closed)
+- #1274: "Dependency overrides break in async context" (open)
 
 ## CI Status
 - Last run on main: PASSED (2 hours ago)
-- Relevant test file: tests/test_dependencies.py (all passing)
 
-## Code Health
-- TODO/FIXME in utils.py: 2
-- No tests exist for `solve_dependencies()` specifically
+## Code Health (Optional)
+- TODO/FIXME count in utils.py: 2
 ```
 
-**Human-grade context that LLMs reason over excellently.**
+**Constraint:** Keep `SIGNALS.md` to 4–6 bullets total. If a signal doesn't change the immediate
+next action, drop it.
+
+**Human-grade context that AI tools reason over well.**
 
 ### 4. RULES.md - Contribution Rules
+
+Generated from deterministic sources (CONTRIBUTING.md, CI configs, repo conventions) and
+synthesized by a local agentic CLI. No new facts should be introduced.
 
 ```markdown
 # Contribution Rules for fastapi/fastapi
@@ -148,7 +152,7 @@ This is something better-context doesn't do. Issuance collects ambient signals:
 **Conventional Commits required.** Use `feat:`, `fix:`, `docs:` prefixes.
 
 ## Testing
-**Required.** 98% of merged PRs include tests.
+**Required.** See CONTRIBUTING.md.
 Run: `pytest tests/test_dependencies.py -v`
 
 ## Style
@@ -157,9 +161,7 @@ Run: `pytest tests/test_dependencies.py -v`
 - Run: `black . && ruff check .`
 
 ## Review Process
-- Average review time: 48 hours
-- Required approvals: 1
-- Primary reviewer for async: @tiangolo
+See CONTRIBUTING.md and CODEOWNERS for review expectations.
 
 ## Don'ts
 - Don't modify `pyproject.toml` without asking
@@ -167,9 +169,9 @@ Run: `pytest tests/test_dependencies.py -v`
 - Don't squash commits yourself (maintainers do this)
 ```
 
-### 5. HANDOFF.md - The LLM Entry Point (SECRET WEAPON)
+### 5. HANDOFF.md - The AI Tool Entry Point (SECRET WEAPON)
 
-**Short. Very short.** This is where Issuance beats better-context.
+**Short. Very short.** This is the alignment layer.
 
 ```markdown
 You are working in the repository `fastapi/fastapi`.
@@ -188,7 +190,7 @@ Suggested approach:
 4. Add tests if behavior is unclear
 ```
 
-**This is the alignment layer. The AI already knows where to look.**
+**This is the alignment layer. The tool already knows where to look.**
 
 ---
 
@@ -206,6 +208,7 @@ $ issuance grab https://github.com/fastapi/fastapi/issues/1284
   ✓ ruff check --statistics
   ✓ pytest --collect-only
 ✓ Extracting signals (commits, related issues)
+✓ Synthesizing RULES.md via Claude Code
 ✓ Generating context pack
 
 📁 .issuance/ ready
@@ -215,32 +218,13 @@ Files created:
   CODEMAP.md    (suspected files + tool output)
   SIGNALS.md    (commits, CI, related issues)
   RULES.md      (contribution rules)
-  HANDOFF.md    (LLM entry point)
+  HANDOFF.md    (AI tool entry point)
 
 Next: Open your AI tool and say "Fix the issue in .issuance/HANDOFF.md"
 ```
 
-**No API calls.** But can optionally invoke local AI harnesses (Claude Code, Cursor) for enhancement.
-
-### `issuance profile <repo>`
-Analyzes repo culture standalone (useful before grabbing issues).
-
-```bash
-$ issuance profile fastapi/fastapi
-
-✓ Fetching last 50 merged PRs
-✓ Analyzing commit conventions
-✓ Extracting review patterns
-✓ Checking CI config
-
-📄 .issuance/RULES.md created
-
-Summary:
-  - Commits: Conventional Commits required
-  - Tests: Required (98% of PRs)
-  - Review: ~48 hours, 1 approval
-  - Style: black + ruff
-```
+**No paid API calls.** By default, `grab` analyzes `CONTRIBUTING.md`, CI config, and repo
+conventions, then invokes a local agentic CLI (Claude Code) to synthesize `RULES.md`.
 
 ### `issuance clean`
 Wipes the context folder.
@@ -259,21 +243,19 @@ $ issuance prompts extract
 🔍 Extracting prompts since 2024-02-03 16:30
 
 Found conversations:
-  ✓ Claude Code: 5 prompts (3 hours ago)
-  ✓ Codex CLI: 3 prompts (2 hours ago)
-  ✓ OpenCode: 2 prompts (1 hour ago)
+  ✓ Claude Code: 8 prompts (2 hours ago)
 
-📝 Total: 10 prompts
+📝 Total: 8 prompts
 
 Investigation:
   [16:31] (claude-code) "help me understand this race condition"
-  [16:45] (codex) "show me the traceback analysis"
+  [16:45] (claude-code) "show me the traceback analysis"
 
 Solution:
-  [17:02] (opencode) "write a fix for cleanup on reused fibers"
+  [17:02] (claude-code) "write a fix for cleanup on reused fibers"
 
 Testing:
-  [17:30] (codex) "generate regression tests"
+  [17:30] (claude-code) "generate regression tests"
 
 Include these in PROMPTS.md? [y/N/edit] y
 ✓ Saved to .issuance/PROMPTS.md
@@ -290,26 +272,10 @@ Include these in PROMPTS.md? [y/N/edit] y
 6. Presents for user review/approval
 7. Generates `.issuance/PROMPTS.md`
 
----
-
-## Differentiation from better-context
-
-| | better-context | Issuance |
-|---|----------------|----------|
-| **Mode** | Query-based | Task-based |
-| **Goal** | "Ask questions" | "Prepare to act" |
-| **Scope** | Global context | Issue-scoped |
-| **Use case** | Tooling for learning | Tooling for shipping |
-| **Interaction** | Runtime conversation | Pre-work orchestration |
-
-**That's a clean, defensible distinction.**
-
----
-
 ## Why This Architecture Wins
 
-1. **Zero Marginal Cost** - GitHub API + existing language tools only
-2. **Deterministic** - Same input → same output, every time
+1. **Zero Marginal Cost** - GitHub API + existing language tools + local agentic CLI
+2. **Deterministic Core** - Base inputs are reproducible; synthesized output may vary
 3. **Debuggable** - You can read and edit every file
 4. **Model Agnostic** - Works with Cursor, Claude Code, Copilot, whatever wins next week
 5. **Uses the Ecosystem** - Runs `ruff`, `tsc`, `pytest` instead of reinventing them
@@ -320,7 +286,7 @@ Include these in PROMPTS.md? [y/N/edit] y
 ## What NOT to Build
 
 - Custom AST walkers (use existing language tools)
-- Deep call graph logic (LLMs handle this)
+- Deep call graph logic (AI tools handle this)
 - Cross-language parsing (out of scope)
 - MCP server (not a conversational assistant)
 - Per-call API payments (use subscription-based local tools)
@@ -328,31 +294,15 @@ Include these in PROMPTS.md? [y/N/edit] y
 
 ---
 
-## Optional: Local AI Enhancement
+## Local Agentic Synthesis (Default)
 
-The CLI doesn't have to be "dumb." If you have Claude Code or Cursor installed, issuance can invoke them to enhance output:
-
-### Enhancement Modes
-
-**`issuance grab --enhance`**
-
-After generating the base context pack, pipes it through Claude Code:
-
-```bash
-$ issuance grab https://github.com/fastapi/fastapi/issues/1284 --enhance
-
-✓ Base context generated (5 files)
-✓ Invoking Claude Code for enhancement...
-  ✓ CODEMAP.md: Added likely root cause analysis
-  ✓ HANDOFF.md: Refined suggested approach
-
-📁 .issuance/ ready (enhanced)
-```
+Issuance is designed for local agentic CLIs by default. After generating deterministic facts,
+`grab` invokes Claude Code (via `claude` CLI) to synthesize `RULES.md`.
 
 **How it works:**
 1. `issuance` generates base files deterministically (GitHub API + language tools)
-2. If `--enhance` flag, invokes `claude` CLI with a specific prompt
-3. Claude Code uses your existing subscription (no API cost)
+2. Invokes `claude` CLI with a specific prompt to synthesize `RULES.md`
+3. If `claude` is not available, falls back to deterministic output
 
 ---
 
@@ -372,12 +322,23 @@ $ issuance grab https://github.com/fastapi/fastapi/issues/1284 --enhance
 | Config | TOML (~/.issuance/config.toml) | Standard, editable |
 | Output | Markdown files | Human-readable, AI-consumable |
 
+### Recommended Tools
+- `rust-analyzer` (editor integration)
+
 ### Why Rust Over Python
 - **Single binary distribution** - No runtime deps, just download and run
 - **~5ms startup** vs ~200ms+ for Python - matters for CLI tools
 - **Interview story** - "I built a Rust CLI" >> "I built a Python CLI"
 - **Type safety** - Catches bugs at compile time
 - **Learning opportunity** - Great project scope for Rust
+
+---
+
+## Supported OS
+
+- **macOS**: First-class support (explicit paths and tooling)
+- **Linux**: Best-effort support
+- **Windows**: Not supported initially (path + tooling differences)
 
 ---
 
@@ -392,14 +353,13 @@ issuance/
 │   ├── commands/
 │   │   ├── mod.rs
 │   │   ├── grab.rs         # issuance grab <url>
-│   │   ├── profile.rs      # issuance profile <repo>
 │   │   └── clean.rs        # issuance clean
 │   ├── services/
 │   │   ├── mod.rs
-│   │   ├── github.rs       # GitHub API (issues, PRs, commits)
+│   │   ├── github.rs       # GitHub API (issues, commits, CI)
+│   │   ├── agentic.rs      # Local agentic CLI integration (Claude Code)
 │   │   ├── tools.rs        # Run language-native tools (ruff, tsc)
-│   │   ├── extractor.rs    # Keyword/file extraction (no LLM)
-│   │   ├── profiler.rs     # PR pattern analysis
+│   │   ├── extractor.rs    # Keyword/file extraction (no model use)
 │   │   └── generator.rs    # Render templates → context files
 │   └── templates/
 │       ├── mod.rs          # Template embedding
@@ -411,11 +371,10 @@ issuance/
 ├── README.md
 └── tests/
     ├── extractor_test.rs
-    ├── profiler_test.rs
     └── generator_test.rs
 ```
 
-**No database. No server. No LLM calls.**
+**No database. No server. No paid API calls.**
 The `.issuance/` folder IS the output.
 
 ---
@@ -431,17 +390,21 @@ The `.issuance/` folder IS the output.
 $ issuance --help
 Commands:
   grab     Fetch an issue and generate context pack
-  profile  Analyze repo contribution culture
   clean    Remove .issuance/ folder
 ```
 
 **Status:** Complete. All commands parse correctly, clean command fully functional.
 
+**Implementation notes (current):**
+- Clap-based CLI is wired up with `grab` and `clean`
+- Config loading from `~/.issuance/config.toml` is implemented
+- `clean` command is implemented end-to-end
+
 ---
 
 ### Phase 2: `issuance grab` - Core Pipeline (IN PROGRESS)
 
-**Goal:** Full context pack generation
+**Goal:** Full context pack generation, including RULES.md synthesis via local agentic CLI
 
 **Files:**
 ```
@@ -449,6 +412,7 @@ src/
 ├── commands/grab.rs
 ├── services/
 │   ├── github.rs       # Issue + comments + signals
+│   ├── agentic.rs      # Local agentic CLI integration (Claude Code)
 │   ├── tools.rs        # Run language-native tools
 │   ├── extractor.rs    # Keywords, file mentions
 │   └── generator.rs    # Generate all context files
@@ -484,7 +448,7 @@ pub fn extract_mentioned_files(text: &str, repo_files: &[String]) -> Vec<String>
 pub fn extract_stack_traces(text: &str) -> Vec<StackTrace>
 ```
 
-**Deliverable:** Full context pack with all 5 files.
+**Deliverable:** Full context pack (5 core files + metadata).
 
 **Additional:** Create `metadata.json` with session start timestamp for prompt extraction.
 
@@ -603,7 +567,7 @@ fn detect_sensitive_info(prompt: &str) -> Vec<SensitivityWarning>
 
 > **Generated from AI tool logs**
 > Extracted: 2024-02-03 18:45
-> Tools used: Claude Code, Codex CLI, OpenCode
+> Tools used: Claude Code
 
 ## Investigation Phase
 
@@ -635,9 +599,7 @@ fn detect_sensitive_info(prompt: &str) -> Vec<SensitivityWarning>
 - Session duration: 1h 22m
 - Total prompts: 8
 - Prompts extracted from:
-  - Claude Code: 5 prompts
-  - Codex CLI: 2 prompts
-  - OpenCode: 1 prompt
+  - Claude Code: 8 prompts
 ```
 
 **Privacy & Control:**
@@ -661,33 +623,7 @@ rusqlite = "0.32"  # For OpenCode SQLite
 
 ---
 
-### Phase 4: `issuance profile` (TODO)
-
-**Goal:** Standalone repo culture analysis
-
-**Files:**
-```
-src/
-├── commands/profile.rs
-└── services/profiler.rs
-```
-
-**`services/profiler.rs`:**
-```rust
-pub async fn fetch_merged_prs(owner: &str, repo: &str, limit: usize) -> Result<Vec<PullRequest>>
-pub fn analyze_commit_convention(prs: &[PullRequest]) -> CommitConvention
-pub fn analyze_test_requirements(prs: &[PullRequest]) -> TestRequirements
-pub fn analyze_review_patterns(prs: &[PullRequest]) -> ReviewPatterns
-pub fn analyze_merge_strategy(prs: &[PullRequest]) -> MergeStrategy
-pub fn parse_contributing_md(content: &str) -> ContributionGuide
-pub fn parse_ci_config(repo_path: &Path) -> Result<CIConfig>
-```
-
-**Deliverable:** RULES.md generated from PR analysis + config parsing.
-
----
-
-### Phase 5: Polish (TODO)
+### Phase 4: Polish (TODO)
 
 **Rich CLI output (indicatif + console):**
 - Progress spinners
@@ -731,10 +667,9 @@ cargo install --path .
 | 1 | Scaffold | ✅ CLI structure, `issuance --help` works |
 | 2-4 | Grab | Full context pack generation (5 files + metadata) |
 | 5-6 | Prompts | AI tool log extraction and PROMPTS.md generation |
-| 7-8 | Profile | Standalone repo culture analysis |
-| 9-11 | Polish | Rich output, tests, installable binary |
+| 7-8 | Polish | Rich output, tests, installable binary |
 
-**Total: ~11 days**
+**Total: ~8 days**
 
 ---
 
@@ -756,7 +691,6 @@ ls .issuance/
 # 4. Work with AI tools
 claude "help me understand this race condition"
 claude "write a fix for the cleanup issue"
-codex "add regression tests"
 
 # 5. Extract prompts (time-filtered)
 issuance prompts extract
@@ -766,11 +700,7 @@ ls .issuance/
 cat .issuance/PROMPTS.md
 # Should show categorized prompts from your session
 
-# 6. Test profile (standalone)
-issuance profile fastapi/fastapi
-cat .issuance/RULES.md
-
-# 7. Full workflow example
+# 6. Full workflow example
 cd ~/some-project
 issuance grab https://github.com/owner/repo/issues/123
 
