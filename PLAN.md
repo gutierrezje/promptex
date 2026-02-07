@@ -33,7 +33,7 @@ Everything else is noise.
 .issuance/
 ├── ISSUE.md      # Ground truth (GitHub API, no interpretation)
 ├── CODEMAP.md    # Lightweight, tool-assisted file mapping
-├── SIGNALS.md    # Focused ambient signals (recent activity, related issues, CI)
+├── SIGNALS.md    # Focused ambient signals (recent activity, CI config, TODO/FIXME)
 ├── RULES.md      # Contribution rules (synthesized via local agentic CLI)
 ├── HANDOFF.md    # AI tool entry point (short, actionable)
 ├── PROMPTS.md    # Your AI-assisted investigation journey (optional)
@@ -86,12 +86,15 @@ I can confirm this on Python 3.11 with uvicorn 0.25.0
 
 **How it's generated:**
 1. Extract keywords from issue text (filenames, symbols)
-2. Run existing project tools if present:
+2. Use local code search to expand likely files and symbols:
+   - `rg -n "<keyword>"` in the repo
+   - `rg --files` + simple substring match
+3. Run existing project tools if present:
    - `tsc --noEmit --pretty false`
    - `ruff check --statistics`
    - `go list ./...`
    - `cargo metadata`
-3. Capture file paths, module boundaries, public signatures (only if cheap)
+4. Capture file paths, module boundaries, public signatures (only if cheap)
 
 ```markdown
 # Code Map for Issue #1284
@@ -124,12 +127,8 @@ action within 5 minutes of reading the issue. If it doesn't, it doesn't belong h
 ## Recent Activity
 - 2024-02-01: "fix: handle None in dependency resolution" (a1b2c3d)
 
-## Related Issues
-- #1280: "Race condition in async middleware" (open)
-- #1274: "Dependency overrides break in async context" (open)
-
-## CI Status
-- Last run on main: PASSED (2 hours ago)
+## CI Config
+- Workflows: `ci.yml`, `lint.yml`
 
 ## Code Health (Optional)
 - TODO/FIXME count in utils.py: 2
@@ -207,7 +206,7 @@ $ issuance grab https://github.com/fastapi/fastapi/issues/1284
 ✓ Running language tools...
   ✓ ruff check --statistics
   ✓ pytest --collect-only
-✓ Extracting signals (commits, related issues)
+✓ Extracting signals (recent commits, CI config, TODO/FIXME)
 ✓ Synthesizing RULES.md via Claude Code
 ✓ Generating context pack
 
@@ -216,7 +215,7 @@ $ issuance grab https://github.com/fastapi/fastapi/issues/1284
 Files created:
   ISSUE.md      (ground truth)
   CODEMAP.md    (suspected files + tool output)
-  SIGNALS.md    (commits, CI, related issues)
+  SIGNALS.md    (recent commits, CI config, TODO/FIXME)
   RULES.md      (contribution rules)
   HANDOFF.md    (AI tool entry point)
 
@@ -274,7 +273,7 @@ Include these in PROMPTS.md? [y/N/edit] y
 
 ## Why This Architecture Wins
 
-1. **Zero Marginal Cost** - GitHub API + existing language tools + local agentic CLI
+1. **Zero Marginal Cost** - GitHub API (issues only) + local tools + local agentic CLI
 2. **Deterministic Core** - Base inputs are reproducible; synthesized output may vary
 3. **Debuggable** - You can read and edit every file
 4. **Model Agnostic** - Works with Cursor, Claude Code, Copilot, whatever wins next week
@@ -291,6 +290,7 @@ Include these in PROMPTS.md? [y/N/edit] y
 - MCP server (not a conversational assistant)
 - Per-call API payments (use subscription-based local tools)
 - Global repo index (issue-scoped only)
+- Anything an agent can get faster with `rg`, `git log`, or filesystem inspection
 
 ---
 
@@ -428,8 +428,6 @@ src/
 ```rust
 pub async fn fetch_issue(owner: &str, repo: &str, issue_num: u64) -> Result<Issue>
 pub async fn fetch_comments(owner: &str, repo: &str, issue_num: u64) -> Result<Vec<Comment>>
-pub async fn fetch_recent_commits(owner: &str, repo: &str, path: &str) -> Result<Vec<Commit>>
-pub async fn fetch_related_issues(owner: &str, repo: &str, keywords: &[String]) -> Result<Vec<Issue>>
 pub fn clone_repo(owner: &str, repo: &str, shallow: bool) -> Result<PathBuf>
 ```
 
@@ -438,7 +436,9 @@ pub fn clone_repo(owner: &str, repo: &str, shallow: bool) -> Result<PathBuf>
 pub fn detect_project_type(repo_path: &Path) -> ProjectType  // Python, TypeScript, Go, Rust
 pub fn run_linter(repo_path: &Path, project_type: ProjectType) -> Result<LintOutput>
 pub fn run_test_discovery(repo_path: &Path, project_type: ProjectType) -> Result<Vec<String>>
-pub async fn get_ci_status(owner: &str, repo: &str) -> Result<CIStatus>
+pub fn collect_ci_config(repo_path: &Path) -> Result<Vec<String>>
+pub fn collect_recent_commits(repo_path: &Path, paths: &[String]) -> Result<Vec<Commit>>
+pub fn collect_todo_fixme(repo_path: &Path, paths: &[String]) -> Result<Vec<String>>
 ```
 
 **`services/extractor.rs`:**

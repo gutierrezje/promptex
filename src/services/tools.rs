@@ -19,12 +19,6 @@ pub struct LintOutput {
     pub errors: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CIStatus {
-    pub last_run: Option<String>,
-    pub status: String,
-}
-
 /// Detect project type by checking for characteristic files
 pub fn detect_project_type(repo_path: &Path) -> ProjectType {
     // TODO: Implement project type detection
@@ -43,8 +37,4 @@ pub fn discover_tests(repo_path: &Path, project_type: ProjectType) -> Result<Vec
     todo!("Discover tests")
 }
 
-/// Get CI status from GitHub Actions
-pub async fn get_ci_status(owner: &str, repo: &str) -> Result<Option<CIStatus>> {
-    // TODO: Implement CI status fetching
-    todo!("Get CI status")
-}
+// TODO(human): Add local signal collectors (CI config, recent commits, TODO/FIXME)

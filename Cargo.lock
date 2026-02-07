@@ -1006,6 +1006,7 @@ dependencies = [
  "tera",
  "tokio",
  "toml",
+ "url",
 ]
 
 [[package]]
