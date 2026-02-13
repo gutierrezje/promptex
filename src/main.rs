@@ -21,12 +21,10 @@ enum Commands {
         /// GitHub issue URL (e.g., https://github.com/owner/repo/issues/123)
         url: String,
 
-        /// Enhance the context pack using local AI tools
-        #[arg(long)]
-        enhance: bool,
+        /// Optional clone directory (defaults to repository name)
+        directory: Option<String>,
     },
 
-    /// Analyze repository contribution culture
     /// Remove .issuance/ folder
     Clean,
 }
@@ -36,8 +34,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Grab { url, enhance } => {
-            commands::grab::execute(&url, enhance).await?;
+        Commands::Grab { url, directory } => {
+            commands::grab::execute(&url, directory.as_deref()).await?;
         }
         Commands::Clean => {
             commands::clean::execute()?;

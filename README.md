@@ -13,20 +13,28 @@ cargo build
 ```
 
 ## Commands
-- `issuance grab <issue-url>`: Generate a context pack for a GitHub issue
+- `issuance grab <issue-url> [directory]`: Clone repository (like `git clone`) and generate issue context
 - `issuance clean`: Remove `.issuance/`
 
 ## Output
-`issuance grab` generates a context pack in `.issuance/`:
+`issuance grab` generates project-level and issue-level context:
+- `.issuance/` (project-level context and shared assets)
+- `.issuance/issues/<issue-number>/` (issue-scoped context files)
+
+Project-level files:
+- `RULES.md`
+
+Issue-scoped files:
 - `ISSUE.md`
 - `CODEMAP.md`
 - `SIGNALS.md`
-- `RULES.md`
 - `HANDOFF.md`
+- `NEXT.md`
+- `PROMPTS.md` (after extraction)
 - `metadata.json`
 
 ## Local Agentic CLI
-`grab` is designed to invoke a local agentic CLI (Claude Code) by default to synthesize `RULES.md`
+`grab` is designed to invoke a local agentic CLI (OpenCode) by default to synthesize `RULES.md`
 from deterministic inputs. No paid API calls.
 
 ## Documentation

@@ -1000,6 +1000,7 @@ dependencies = [
  "dirs",
  "indicatif",
  "octocrab",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

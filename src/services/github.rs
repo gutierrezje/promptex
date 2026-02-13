@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use octocrab::Octocrab;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,7 +37,8 @@ impl IssueUrl {
     /// - https://github.com/owner/repo/issues/123
     /// - github.com/owner/repo/issues/123
     pub fn parse(url: &str) -> Result<Self> {
-        let url = if url.starts_with("https://") {
+        // Ensure URL has a scheme for parsing
+        let url = if url.contains("://") {
             url.to_string()
         } else {
             format!("https://{}", url)
@@ -56,6 +57,7 @@ impl IssueUrl {
         let issue_number_str = segments.next().context("URL must have issue number segment")?;
         let issue_number = issue_number_str.parse::<u64>().context("Issue number must be a valid integer")?;
 
+        // Ensure there are no extra segments after the issue number
         if segments.next().is_some() {
             return Err(anyhow!("URL has too many segments"));
         }
@@ -80,6 +82,7 @@ pub async fn fetch_issue(owner: &str, repo: &str, issue_number: u64) -> Result<I
         octocrab::models::IssueState::Closed => "closed".to_string(),
         _ => "unknown".to_string(),
     };
+
     Ok(Issue {
         number: gh_issue.number,
         title: gh_issue.title,
@@ -104,44 +107,54 @@ pub async fn fetch_comments(owner: &str, repo: &str, issue_number: u64) -> Resul
         created_at: c.created_at.to_rfc3339(),
         is_maintainer: false, // TODO: Enhance to check if author is a maintainer
     }).collect();
+
     Ok(comments)
 }
 
 /// Clone a repository (with shallow clone support)
-pub fn clone_repo(owner: &str, repo: &str, shallow: bool) -> Result<PathBuf> {
-    // 1. Create temp directory: std::env::temp_dir().join(format!("issuance-{}-{}", owner, repo))
-    // 2. Remove if exists: std::fs::remove_dir_all
-    // 3. Build git command: git clone [--depth 1 if shallow] <url> <path>
-    // 4. Execute with std::process::Command and check output
-    let temp_dir = std::env::temp_dir().join(format!("issuance-{}-{}", owner, repo));
-    if temp_dir.exists() {
-        std::fs::remove_dir_all(&temp_dir).context("Failed to remove existing temp directory")?;
+pub fn clone_repo(
+    owner: &str,
+    repo: &str,
+    destination: Option<&Path>,
+    shallow: bool,
+) -> Result<PathBuf> {
+    let target_dir = match destination {
+        Some(path) => path.to_path_buf(),
+        None => std::env::current_dir()
+            .context("Failed to resolve current working directory")?
+            .join(repo),
+    };
+
+    if target_dir.exists() {
+        return Err(anyhow!(
+            "Clone destination already exists: {}",
+            target_dir.display()
+        ));
     }
+
     let repo_url = format!("https://github.com/{}/{}", owner, repo);
     let mut cmd = std::process::Command::new("git");
     cmd.arg("clone");
     if shallow {
         cmd.arg("--depth").arg("1");
     }
-    cmd.arg(&repo_url).arg(&temp_dir);
+    cmd.arg(&repo_url).arg(&target_dir);
     let output = cmd.output().context("Failed to execute git command")?;
     if !output.status.success() {
         return Err(anyhow!("Git clone failed: {}", String::from_utf8_lossy(&output.stderr)));
     }
-    Ok(temp_dir)
+
+    Ok(target_dir)
 }
 
 /// Build an octocrab instance with optional authentication
 fn build_octocrab() -> Result<Octocrab> {
-    // 1. Load config with Config::load()?
-    // 2. If token exists, use Octocrab::builder().personal_token(token)
-    // 3. Otherwise use Octocrab::builder() (unauthenticated)
-    // 4. Call .build()
     let config = crate::config::Config::load()?;
     let octocrab = if let Some(token) = config.github.token {
         Octocrab::builder().personal_token(token).build()?
     } else {
         Octocrab::builder().build()?
     };
+
     Ok(octocrab)
 }

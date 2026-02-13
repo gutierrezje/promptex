@@ -31,13 +31,16 @@ Everything else is noise.
 
 ```
 .issuance/
-├── ISSUE.md      # Ground truth (GitHub API, no interpretation)
-├── CODEMAP.md    # Lightweight, tool-assisted file mapping
-├── SIGNALS.md    # Focused ambient signals (recent activity, CI config, TODO/FIXME)
-├── RULES.md      # Contribution rules (synthesized via local agentic CLI)
-├── HANDOFF.md    # AI tool entry point (short, actionable)
-├── PROMPTS.md    # Your AI-assisted investigation journey (optional)
-└── metadata.json # Session metadata (timestamp, issue info)
+├── RULES.md      # Project-wide contribution rules (synthesized via local agentic CLI)
+└── issues/
+    └── <issue-number>/
+        ├── ISSUE.md      # Ground truth for this issue
+        ├── CODEMAP.md    # Issue-scoped file mapping
+        ├── SIGNALS.md    # Issue-scoped local ambient signals
+        ├── HANDOFF.md    # AI tool entry point for this issue
+        ├── NEXT.md       # Immediate next 3 actions for this issue
+        ├── PROMPTS.md    # Trust log for this issue session
+        └── metadata.json # Session metadata for this issue
 ```
 
 **Key principle:** Assemble evidence, don't derive understanding.
@@ -191,15 +194,33 @@ Suggested approach:
 
 **This is the alignment layer. The tool already knows where to look.**
 
+### 6. NEXT.md - Immediate Action Plan
+
+`NEXT.md` is generated to reduce first-step paralysis and keep startup cost low.
+
+```markdown
+# Next Actions
+
+1. Run focused tests: `pytest tests/test_dependencies.py -q`
+2. Inspect suspect files: `rg -n "solve_dependencies|dependency_overrides" fastapi/dependencies`
+3. Start implementation in `fastapi/dependencies/utils.py`
+```
+
+### 7. PROMPTS.md - Trust Log (Core)
+
+`PROMPTS.md` is a curated, reviewed log of AI prompts that materially changed investigation,
+implementation, or testing decisions. This is a trust artifact for maintainers, not a raw chat dump.
+
 ---
 
 ## CLI Commands
 
-### `issuance grab <url>`
-Fetches the issue and generates the full context pack.
+### `issuance grab <url> [directory]`
+Clones the repository like `git clone` (default folder: repo name, optional custom directory),
+then fetches the issue and generates the context pack.
 
 ```bash
-$ issuance grab https://github.com/fastapi/fastapi/issues/1284
+$ issuance grab https://github.com/fastapi/fastapi/issues/1284 fastapi-work
 
 ✓ Cloning fastapi/fastapi (shallow)
 ✓ Fetching issue #1284 (12 comments)
@@ -207,23 +228,30 @@ $ issuance grab https://github.com/fastapi/fastapi/issues/1284
   ✓ ruff check --statistics
   ✓ pytest --collect-only
 ✓ Extracting signals (recent commits, CI config, TODO/FIXME)
-✓ Synthesizing RULES.md via Claude Code
+✓ Synthesizing RULES.md via OpenCode
 ✓ Generating context pack
 
-📁 .issuance/ ready
+📁 fastapi-work/.issuance/ ready
 
 Files created:
-  ISSUE.md      (ground truth)
-  CODEMAP.md    (suspected files + tool output)
-  SIGNALS.md    (recent commits, CI config, TODO/FIXME)
-  RULES.md      (contribution rules)
-  HANDOFF.md    (AI tool entry point)
+  .issuance/RULES.md                                  (project-wide rules)
+  .issuance/issues/1284/ISSUE.md                      (ground truth)
+  .issuance/issues/1284/CODEMAP.md                    (suspected files + tool output)
+  .issuance/issues/1284/SIGNALS.md                    (recent commits, CI config, TODO/FIXME)
+  .issuance/issues/1284/HANDOFF.md                    (AI tool entry point)
+  .issuance/issues/1284/NEXT.md                       (immediate next 3 actions)
+  .issuance/issues/1284/metadata.json                 (issue session metadata)
 
-Next: Open your AI tool and say "Fix the issue in .issuance/HANDOFF.md"
+Next: Open your AI tool and say "Fix the issue in .issuance/issues/1284/HANDOFF.md"
 ```
 
 **No paid API calls.** By default, `grab` analyzes `CONTRIBUTING.md`, CI config, and repo
-conventions, then invokes a local agentic CLI (Claude Code) to synthesize `RULES.md`.
+conventions, then invokes a local agentic CLI (OpenCode) to synthesize `RULES.md`.
+
+**Utility defaults:**
+- Fast path first: prioritize project `RULES.md` + issue `ISSUE.md`, `HANDOFF.md`, `NEXT.md`
+- Add issue `CODEMAP.md` and `SIGNALS.md` from local tools without heavy analysis
+- Reserve deeper enrichment for explicit flags (`--deep`) if needed
 
 ### `issuance clean`
 Wipes the context folder.
@@ -234,7 +262,7 @@ $ issuance clean
 ```
 
 ### `issuance prompts extract`
-Extracts prompts from AI tool conversation logs (time-filtered).
+Builds a curated trust log from AI tool prompts (time-filtered + reviewed).
 
 ```bash
 $ issuance prompts extract
@@ -242,43 +270,44 @@ $ issuance prompts extract
 🔍 Extracting prompts since 2024-02-03 16:30
 
 Found conversations:
-  ✓ Claude Code: 8 prompts (2 hours ago)
+  ✓ OpenCode: 24 prompts (2 hours ago)
 
-📝 Total: 8 prompts
+📝 Kept after curation: 8 prompts
 
 Investigation:
-  [16:31] (claude-code) "help me understand this race condition"
-  [16:45] (claude-code) "show me the traceback analysis"
+  [16:31] (opencode) "help me understand this race condition"
+  [16:45] (opencode) "show me the traceback analysis"
 
 Solution:
-  [17:02] (claude-code) "write a fix for cleanup on reused fibers"
+  [17:02] (opencode) "write a fix for cleanup on reused fibers"
 
 Testing:
-  [17:30] (claude-code) "generate regression tests"
+  [17:30] (opencode) "generate regression tests"
 
-Include these in PROMPTS.md? [y/N/edit] y
-✓ Saved to .issuance/PROMPTS.md
+Include these in PROMPTS.md with evidence links? [y/N/edit] y
+✓ Saved to .issuance/issues/1284/PROMPTS.md
 
 💡 Tip: Review PROMPTS.md and redact any sensitive information before committing
 ```
 
 **How it works:**
-1. Reads `started_at` timestamp from `.issuance/metadata.json`
-2. Detects which AI tools were used (Claude Code, Codex CLI, OpenCode)
-3. Parses conversation logs from each tool
-4. Filters to prompts after the start timestamp
+1. Reads `started_at` timestamp from `.issuance/issues/<issue-number>/metadata.json`
+2. Parses tool logs (Claude first, adapters for others later)
+3. Filters prompts after the start timestamp
+4. Keeps only prompts tied to a concrete artifact (file, command, or test)
 5. Categorizes prompts (Investigation, Solution, Testing)
-6. Presents for user review/approval
-7. Generates `.issuance/PROMPTS.md`
+6. Redacts sensitive values and prompts for review/approval
+7. Generates `.issuance/issues/<issue-number>/PROMPTS.md` with evidence + confidence tags
 
 ## Why This Architecture Wins
 
 1. **Zero Marginal Cost** - GitHub API (issues only) + local tools + local agentic CLI
 2. **Deterministic Core** - Base inputs are reproducible; synthesized output may vary
 3. **Debuggable** - You can read and edit every file
-4. **Model Agnostic** - Works with Cursor, Claude Code, Copilot, whatever wins next week
-5. **Uses the Ecosystem** - Runs `ruff`, `tsc`, `pytest` instead of reinventing them
-6. **Composable** - Each file is standalone, use what you need
+4. **Review Trust** - `PROMPTS.md` captures how conclusions were reached, not just final output
+5. **Model Agnostic** - Works with OpenCode, Cursor, Claude Code, Copilot, whatever wins next week
+6. **Uses the Ecosystem** - Runs `ruff`, `tsc`, `pytest` instead of reinventing them
+7. **Composable** - Each file is standalone, use what you need
 
 ---
 
@@ -291,18 +320,19 @@ Include these in PROMPTS.md? [y/N/edit] y
 - Per-call API payments (use subscription-based local tools)
 - Global repo index (issue-scoped only)
 - Anything an agent can get faster with `rg`, `git log`, or filesystem inspection
+- Raw prompt dumps without curation, evidence, or redaction
 
 ---
 
 ## Local Agentic Synthesis (Default)
 
 Issuance is designed for local agentic CLIs by default. After generating deterministic facts,
-`grab` invokes Claude Code (via `claude` CLI) to synthesize `RULES.md`.
+`grab` invokes OpenCode (via `opencode` CLI) to synthesize `RULES.md`.
 
 **How it works:**
 1. `issuance` generates base files deterministically (GitHub API + language tools)
-2. Invokes `claude` CLI with a specific prompt to synthesize `RULES.md`
-3. If `claude` is not available, falls back to deterministic output
+2. Invokes `opencode` CLI with a specific prompt to synthesize `RULES.md`
+3. If `opencode` is not available, falls back to deterministic output
 
 ---
 
@@ -356,9 +386,9 @@ issuance/
 │   │   └── clean.rs        # issuance clean
 │   ├── services/
 │   │   ├── mod.rs
-│   │   ├── github.rs       # GitHub API (issues, commits, CI)
-│   │   ├── agentic.rs      # Local agentic CLI integration (Claude Code)
-│   │   ├── tools.rs        # Run language-native tools (ruff, tsc)
+│   │   ├── github.rs       # GitHub API (issues + comments only)
+│   │   ├── agentic.rs      # Local agentic CLI integration (OpenCode)
+│   │   ├── tools.rs        # Local tooling + local signal collectors
 │   │   ├── extractor.rs    # Keyword/file extraction (no model use)
 │   │   └── generator.rs    # Render templates → context files
 │   └── templates/
@@ -367,11 +397,13 @@ issuance/
 │       ├── codemap.md.tera
 │       ├── signals.md.tera
 │       ├── rules.md.tera
-│       └── handoff.md.tera
+│       ├── handoff.md.tera
+│       └── next.md.tera
 ├── README.md
 └── tests/
     ├── extractor_test.rs
-    └── generator_test.rs
+    ├── generator_test.rs
+    └── ai_logs_test.rs
 ```
 
 **No database. No server. No paid API calls.**
@@ -411,9 +443,9 @@ Commands:
 src/
 ├── commands/grab.rs
 ├── services/
-│   ├── github.rs       # Issue + comments + signals
-│   ├── agentic.rs      # Local agentic CLI integration (Claude Code)
-│   ├── tools.rs        # Run language-native tools
+│   ├── github.rs       # Issue + comments + repository clone
+│   ├── agentic.rs      # Local agentic CLI integration (OpenCode)
+│   ├── tools.rs        # Run language tools + collect local signals
 │   ├── extractor.rs    # Keywords, file mentions
 │   └── generator.rs    # Generate all context files
 └── templates/
@@ -421,23 +453,24 @@ src/
     ├── codemap.md.tera
     ├── signals.md.tera
     ├── rules.md.tera
-    └── handoff.md.tera
+    ├── handoff.md.tera
+    └── next.md.tera
 ```
 
 **`services/github.rs`:**
 ```rust
 pub async fn fetch_issue(owner: &str, repo: &str, issue_num: u64) -> Result<Issue>
 pub async fn fetch_comments(owner: &str, repo: &str, issue_num: u64) -> Result<Vec<Comment>>
-pub fn clone_repo(owner: &str, repo: &str, shallow: bool) -> Result<PathBuf>
+pub fn clone_repo(owner: &str, repo: &str, destination: Option<&Path>, shallow: bool) -> Result<PathBuf>
 ```
 
 **`services/tools.rs`:**
 ```rust
 pub fn detect_project_type(repo_path: &Path) -> ProjectType  // Python, TypeScript, Go, Rust
-pub fn run_linter(repo_path: &Path, project_type: ProjectType) -> Result<LintOutput>
-pub fn run_test_discovery(repo_path: &Path, project_type: ProjectType) -> Result<Vec<String>>
+pub fn run_linter(repo_path: &Path, project_type: ProjectType) -> Result<Option<LintOutput>>
+pub fn discover_tests(repo_path: &Path, project_type: ProjectType) -> Result<Vec<String>>
 pub fn collect_ci_config(repo_path: &Path) -> Result<Vec<String>>
-pub fn collect_recent_commits(repo_path: &Path, paths: &[String]) -> Result<Vec<Commit>>
+pub fn collect_recent_commits(repo_path: &Path, paths: &[String], limit: usize) -> Result<Vec<String>>
 pub fn collect_todo_fixme(repo_path: &Path, paths: &[String]) -> Result<Vec<String>>
 ```
 
@@ -448,178 +481,135 @@ pub fn extract_mentioned_files(text: &str, repo_files: &[String]) -> Vec<String>
 pub fn extract_stack_traces(text: &str) -> Vec<StackTrace>
 ```
 
-**Deliverable:** Full context pack (5 core files + metadata).
+**Deliverable:** Project-level `.issuance/RULES.md` + issue-scoped context folder with 6 files + `metadata.json`.
 
-**Additional:** Create `metadata.json` with session start timestamp for prompt extraction.
+**Additional:** Create issue-scoped `metadata.json` with session start timestamp for prompt extraction.
 
 ---
 
-### Phase 3: Prompt Extraction (TODO)
+### Phase 3: Prompt Transparency (NEXT PRIORITY)
 
-**Goal:** Extract and document prompts from AI coding tool sessions
+**Goal:** Generate a maintainer-trustworthy reasoning log, not a raw transcript
 
 **Why this matters:**
-- Shows maintainers your reasoning process (epistemic humility)
-- Helps other contributors learn effective prompting strategies
-- Provides transparency in AI-assisted contributions
-- Demonstrates thorough investigation vs. copy-paste
+- Increases trust by showing how conclusions were reached
+- Reduces "AI slop" concerns with inspectable reasoning artifacts
+- Gives maintainers concrete evidence paths (files, tests, commands)
 
-**Supported Tools:**
-1. **Claude Code** - `~/.claude/projects/<hash>/<session>.jsonl`
-2. **OpenAI Codex CLI** - `~/.codex/history.jsonl`
-3. **OpenCode** - `~/.config/opencode/sessions.db` (SQLite)
+**Scope (OpenCode first):**
+1. **OpenCode** - `~/.config/opencode/sessions.db`
+2. Adapter hooks for Codex/Claude later (same normalized schema)
 
 **Files:**
 ```
 src/
 ├── commands/
-│   └── prompts.rs          # extract, review subcommands
+│   └── prompts.rs          # extract + review + export-pr-summary
 └── services/
-    └── ai_logs.rs          # Log parsing and extraction
+    └── ai_logs.rs          # extraction, curation, redaction, normalization
 ```
 
 **Commands:**
 ```bash
-# Extract prompts from AI tool logs (time-filtered)
+# Build curated trust log for current issue session
 issuance prompts extract
 
-# Review and edit extracted prompts before including
+# Review/redact entries before writing PROMPTS.md
 issuance prompts review
 
-# Clear prompt history for current issue
-issuance prompts clear
+# Generate PR-ready transparency section from PROMPTS.md
+issuance prompts export-pr-summary
 ```
 
-**`services/ai_logs.rs`:**
+**Normalized entry schema (`ai_logs.rs`):**
 ```rust
 #[derive(Debug)]
-pub struct ExtractedPrompt {
-    pub tool: String,        // "claude-code", "codex", "opencode"
-    pub timestamp: String,
-    pub prompt: String,
-    pub category: Category,  // Investigation, Solution, Testing
+pub struct SessionMetadata {
+    pub tool: String,              // "opencode"
+    pub model: Option<String>,     // e.g. "gpt-5-codex"
+    pub cli_version: Option<String>,
+    pub agentic_environment: Option<String>, // codex-cli, opencode desktop, etc.
+    pub os: Option<String>,        // macOS/Linux
+    pub shell: Option<String>,     // zsh/bash
 }
 
 #[derive(Debug)]
-pub enum Category {
-    Investigation,  // "explain", "understand", "show me"
-    Solution,       // "fix", "implement", "write"
-    Testing,        // "test", "reproduce", "verify"
-    Other,
+pub struct PromptEntry {
+    pub tool: String,             // "opencode"
+    pub timestamp: String,        // ISO-8601
+    pub intent: Intent,           // Investigation | Solution | Testing
+    pub prompt: String,           // Redacted text
+    pub artifact: String,         // File path, command, or test name
+    pub result: String,           // What changed or what was ruled out
+    pub confidence: Confidence,   // low | medium | high
 }
-
-/// Detect which AI tools have been used
-pub fn detect_ai_tools() -> Result<Vec<AITool>>
-
-/// Extract prompts from Claude Code JSONL logs
-pub fn extract_claude_code_prompts(
-    project_dir: &Path,
-    after: DateTime<Utc>,
-) -> Result<Vec<ExtractedPrompt>>
-
-/// Extract prompts from Codex CLI JSONL logs
-pub fn extract_codex_prompts(
-    codex_home: &Path,
-    after: DateTime<Utc>,
-) -> Result<Vec<ExtractedPrompt>>
-
-/// Extract prompts from OpenCode SQLite database
-pub fn extract_opencode_prompts(
-    db_path: &Path,
-    after: DateTime<Utc>,
-) -> Result<Vec<ExtractedPrompt>>
-
-/// Categorize prompt based on keywords
-fn categorize_prompt(text: &str) -> Category
-
-/// Filter prompts relevant to current issue
-pub fn filter_by_issue_context(
-    prompts: Vec<ExtractedPrompt>,
-    issue_keywords: &[String],
-) -> Vec<ExtractedPrompt>
-
-/// Detect sensitive information (API keys, paths, URLs)
-fn detect_sensitive_info(prompt: &str) -> Vec<SensitivityWarning>
 ```
 
-**Timestamp Window Strategy:**
+**Curation rules (non-negotiable):**
+1. Keep only prompts tied to a concrete artifact (`file`, `command`, or `test`)
+2. Keep failed hypotheses if they changed direction
+3. Drop repetitive prompts that produced no action
+4. Always run sensitive-value detection + user review before write
 
-1. **When starting work** (`issuance grab`):
-   ```json
-   // .issuance/metadata.json
-   {
-     "issue_url": "https://github.com/fastapi/fastapi/issues/1284",
-     "started_at": "2024-02-03T16:30:00Z",
-     "issue_number": 1284,
-     "repo_owner": "fastapi",
-     "repo_name": "fastapi"
-   }
-   ```
+**Timestamp window strategy:**
+1. `grab` writes `.issuance/issues/<issue-number>/metadata.json` with `started_at`
+2. `prompts extract` only considers entries with `timestamp >= started_at`
 
-2. **When extracting prompts** (`issuance prompts extract`):
-   - Read `started_at` from metadata.json
-   - Only parse log entries with `timestamp >= started_at`
-   - Filters out unrelated conversations from before/after
-
-**Generated PROMPTS.md:**
+**Generated `PROMPTS.md` (curated):**
 ```markdown
 # Prompting Session for Issue #1284
 
-> **Generated from AI tool logs**
+> Generated from local AI logs (curated)
 > Extracted: 2024-02-03 18:45
-> Tools used: Claude Code
+> Tool: OpenCode
+> Model: gpt-5-codex
+> Agentic environment: Codex CLI
+> CLI version: 0.24.0
+> OS/Shell: macOS / zsh
 
-## Investigation Phase
+## Investigation
+- [16:31] Prompt: "help me understand this race condition in utils.py"
+  Artifact: `fastapi/dependencies/utils.py`
+  Result: Identified cleanup path with missing guard
+  Confidence: medium
 
-**Understanding the problem:**
-- [16:31] "help me understand this race condition in utils.py"
-- [16:35] "show me where dependency resolution happens"
-
-**Exploring the codebase:**
-- [16:42] "what files are involved in async dependency injection?"
-
-## Solution Development
-
-**Exploring approaches:**
-- [17:05] "why would cleanup fail in concurrent mode?"
-- [17:12] "what's the proper way to handle fiber reuse?"
-
-**Implementation:**
-- [17:25] "write a fix that prevents cleanup on reused fibers"
+## Solution
+- [17:25] Prompt: "write a fix that prevents cleanup on reused fibers"
+  Artifact: `fastapi/dependencies/dependants.py`
+  Result: Added guard condition and updated call path
+  Confidence: high
 
 ## Testing
-
-**Creating tests:**
-- [17:40] "write a test that reproduces the memory leak"
-- [17:52] "verify this works in React 18.2+"
-
----
-
-**Metadata:**
-- Session duration: 1h 22m
-- Total prompts: 8
-- Prompts extracted from:
-  - Claude Code: 8 prompts
+- [17:40] Prompt: "write a test that reproduces the memory leak"
+  Artifact: `tests/test_dependencies.py::test_cleanup_on_reused_fibers`
+  Result: Added regression test, passing locally
+  Confidence: high
 ```
 
-**Privacy & Control:**
-- User reviews all prompts before including
-- Auto-detect and warn about sensitive info (API keys, absolute paths)
-- Can redact individual prompts
-- Opt-out available (skip extraction entirely)
+**PR transparency export (`issuance prompts export-pr-summary`):**
+```markdown
+## AI Assistance Transparency
 
-**Dependencies:**
-```toml
-[dependencies]
-chrono = { version = "0.4", features = ["serde"] }
-rusqlite = "0.32"  # For OpenCode SQLite
+- Tool: OpenCode
+- Model: gpt-5-codex
+- Agentic environment: Codex CLI
+- Session window: 2024-02-03T16:30:00Z to 2024-02-03T18:45:00Z
+- Kept prompts: 8 (curated from 24)
+
+### Reasoning Evidence
+- Investigation: linked to `fastapi/dependencies/utils.py`
+- Solution: linked to `fastapi/dependencies/dependants.py`
+- Testing: linked to `tests/test_dependencies.py::test_cleanup_on_reused_fibers`
 ```
 
-**Deliverable:**
-- `issuance prompts extract` working for all 3 tools
-- Time-filtered extraction using metadata.json
-- Interactive review before saving to PROMPTS.md
-- Sensitive info detection and warnings
+**Privacy controls:**
+- Metadata fields are collected as optional and can be redacted before export
+- `prompts review` supports removing model/tool/environment details per entry or globally
+
+**Deliverables:**
+- `issuance prompts extract` with curation + redaction
+- `PROMPTS.md` with artifact/result/confidence + optional session metadata
+- `issuance prompts export-pr-summary` with environment/model transparency fields
 
 ---
 
@@ -642,7 +632,9 @@ pr_limit = 50
 
 [prompts]
 auto_extract = false  # Prompt to extract after solving
-tools = ["claude-code", "codex", "opencode"]
+tools = ["opencode"]  # Adapter hooks for others later
+include_session_metadata = true   # model, cli version, environment, os/shell
+redact_session_metadata = false   # force-hide metadata in exported PR summary
 ```
 
 **Tests:**
@@ -665,9 +657,9 @@ cargo install --path .
 | Day | Phase | Deliverable |
 |-----|-------|-------------|
 | 1 | Scaffold | ✅ CLI structure, `issuance --help` works |
-| 2-4 | Grab | Full context pack generation (5 files + metadata) |
-| 5-6 | Prompts | AI tool log extraction and PROMPTS.md generation |
-| 7-8 | Polish | Rich output, tests, installable binary |
+| 2-4 | Grab | Repo clone + project/issue context generation |
+| 5-7 | Prompt Transparency | Curated PROMPTS.md + PR summary export |
+| 8 | Polish | Rich output, tests, installable binary |
 
 **Total: ~8 days**
 
@@ -683,36 +675,43 @@ cargo build --release
 # 2. Install globally (optional)
 cargo install --path .
 
-# 3. Test grab (creates context pack + metadata)
-issuance grab https://github.com/fastapi/fastapi/issues/1284
-ls .issuance/
-# Should see: ISSUE.md, CODEMAP.md, SIGNALS.md, RULES.md, HANDOFF.md, metadata.json
+# 3. Test grab (clone + context generation)
+issuance grab https://github.com/fastapi/fastapi/issues/1284 fastapi-work
+ls fastapi-work/.issuance/
+# Should see: RULES.md, issues/
+ls fastapi-work/.issuance/issues/1284/
+# Should see: ISSUE.md, CODEMAP.md, SIGNALS.md, HANDOFF.md, NEXT.md, metadata.json
 
 # 4. Work with AI tools
-claude "help me understand this race condition"
-claude "write a fix for the cleanup issue"
+opencode "help me understand this race condition"
+opencode "write a fix for the cleanup issue"
 
 # 5. Extract prompts (time-filtered)
 issuance prompts extract
-ls .issuance/
+ls fastapi-work/.issuance/issues/1284/
 # Now also see: PROMPTS.md
 
-cat .issuance/PROMPTS.md
+cat fastapi-work/.issuance/issues/1284/PROMPTS.md
 # Should show categorized prompts from your session
+
+# 5b. Generate PR transparency summary
+issuance prompts export-pr-summary
 
 # 6. Full workflow example
 cd ~/some-project
-issuance grab https://github.com/owner/repo/issues/123
+issuance grab https://github.com/owner/repo/issues/123 repo-workdir
 
 # Work with your preferred AI tool
-claude "Fix the issue described in .issuance/HANDOFF.md"
+opencode "Fix the issue described in .issuance/issues/123/HANDOFF.md"
 
 # After solving, extract and include your prompts
 issuance prompts extract
 
 # Review the full context pack
-ls -la .issuance/
-# ISSUE.md, CODEMAP.md, SIGNALS.md, RULES.md, HANDOFF.md, PROMPTS.md, metadata.json
+ls -la repo-workdir/.issuance/
+# RULES.md, issues/
+ls -la repo-workdir/.issuance/issues/123/
+# ISSUE.md, CODEMAP.md, SIGNALS.md, HANDOFF.md, NEXT.md, PROMPTS.md, metadata.json
 
 # Clean up when done
 issuance clean
