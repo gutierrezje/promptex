@@ -1,338 +1,387 @@
-# Issuance - Context Orchestrator
+# PromptEx - Prompt Extraction for OSS Contributions
 
 ## The Problem
 
-The biggest friction isn't finding an issue; it's the **2 hours you spend orienting yourself**:
-- "How do I build this?"
-- "Where is the relevant code?"
-- "What is the maintainer's vibe?"
+OSS maintainers reviewing AI-assisted PRs face a trust gap:
+- "What prompts were used?"
+- "Was this thoughtful or just slop?"
+- "How did they arrive at this solution?"
 
 ## The Philosophy
 
-**Issuance curates, validates, and stages context so AI tools can do their best work.**
+**PromptEx (`pmtx`) extracts and curates AI prompts so maintainers can see your reasoning.**
 
-It's not a static analysis engine. It's not an AI agent replacement.
-It's a **Context Orchestrator**.
+It's not a raw chat dump. It's not prompt analytics.
+It's a **Prompt History Tool**.
 
-**3-Stage Pipeline:**
+**Smart extraction workflow:**
 ```
-DISCOVER → STAGE → HANDOFF
+WORK → EXTRACT → SHARE
 ```
 
-1. **Discover** - Find what's worth working on
-2. **Stage** - Prepare high-signal context
-3. **Handoff** - Deliver to AI tools, editors, humans
+1. **Work** - Use any AI coding tool (Claude Code, Cursor, etc.)
+2. **Extract** - `pmtx extract` intelligently finds relevant prompts
+3. **Share** - Paste PR-formatted output into GitHub PR description
 
 Everything else is noise.
 
 ---
 
-## The Context Pack (v2)
+## Storage & Output
 
-```
-.issuance/
-├── RULES.md      # Project-wide contribution rules (synthesized via local agentic CLI)
-└── issues/
-    └── <issue-number>/
-        ├── ISSUE.md      # Ground truth for this issue
-        ├── CODEMAP.md    # Issue-scoped file mapping
-        ├── SIGNALS.md    # Issue-scoped local ambient signals
-        ├── HANDOFF.md    # AI tool entry point for this issue
-        ├── NEXT.md       # Immediate next 3 actions for this issue
-        ├── PROMPTS.md    # Trust log for this issue session
-        └── metadata.json # Session metadata for this issue
-```
+**Storage:** `~/.promptex/projects/<project-id>/`
+- Continuous journal (append-only log)
+- No pollution of project working directory
+- No .gitignore needed
 
-**Key principle:** Assemble evidence, don't derive understanding.
+**Output:** PR-formatted markdown to stdout (default)
+- Copy/paste into GitHub PR description
+- Optional: `--write` flag saves to file
+- Collapsible `<details>` section for maintainer convenience
+
+**Key principle:** Show reasoning, not raw transcripts.
 
 ---
 
-## The Context Pack Files
+## Smart Extraction Logic
 
-### 1. ISSUE.md - Ground Truth
+### How `pmtx extract` Works (No Args)
 
-**Source:** GitHub API only. No interpretation.
+**Step 1: Determine scope (smart defaults)**
+```
+What branch am I on?
+├─ Feature branch (not main/master/develop)
+│   └─ Extract since branch creation
+│       Files: All changes on this branch
+│       Time: Since branch diverged from parent
+│
+└─ Main branch (or fork workflow)
+    ├─ Uncommitted changes exist?
+    │   └─ Extract for uncommitted + recent commits
+    │       Interactive: "Include last N commits?"
+    │
+    └─ No uncommitted changes
+        └─ Extract last commit (or prompt user)
+            Interactive: "Extract last N commits?"
+```
 
+**User can override with explicit flags:**
+- `--uncommitted` - Only uncommitted work
+- `--commits N` - Last N commits
+- `--since-commit HASH` - Since specific commit
+- `--branch-lifetime` - Full branch history
+- `--since "2 days ago"` - Time-based
+
+**Step 2: Load journal from home directory**
+```
+~/.promptex/projects/<project-id>/journal.jsonl
+```
+Project ID determined by:
+1. Git remote origin URL (preferred - stable across clones)
+2. Git repo root path (fallback)
+
+**Step 3: Filter journal by scope**
+1. Match file paths (prompts that touched files in scope)
+2. Match time window (prompts within relevant timeframe)
+3. Match branch context (for metadata/context)
+
+**Step 4: Curate prompts**
+1. Keep only prompts with concrete artifacts (file edits, commands, tests)
+2. Keep failed attempts if they changed direction
+3. Drop repetitive prompts with no action
+4. Already redacted during journaling (privacy-first)
+
+**Step 5: Categorize & format**
+- Investigation (understanding code)
+- Solution (implementation)
+- Testing (validation)
+
+**Step 6: Output**
+- Default: PR-formatted markdown to stdout (collapsible)
+- With `--write`: Save to PROMPTS.md (or custom filename)
+
+### Output Format
+
+**Default (stdout, PR description format):**
 ```markdown
-# Issue #1284: Async Session Race Condition
+## 🤖 Prompt History
 
-**Repository:** fastapi/fastapi
-**Author:** @user123
-**Created:** 2024-01-15
-**Labels:** bug, async, needs-triage
-**Milestone:** v0.110.0
-**Linked PRs:** None
+<details>
+<summary>6 prompts over 1h 46m - Click to expand</summary>
 
-## Description
-[Raw text of the issue, unedited...]
+**Session Details**
+- Tools: Claude Code (claude-sonnet-4.5) - 5 prompts, Cursor (gpt-4) - 1 prompt
+- Commits: `abc123`, `abc124` (2 commits)
+- Branch: `feature/auth-fix`
+- Time range: 2024-02-26 14:32 - 16:18
+- Modified files: `src/auth.rs`, `tests/auth_test.rs`
 
-## Comments (12 total)
+---
 
-### @tiangolo (Maintainer) - 2024-01-16
-I think this is related to the `dependency_overrides` logic in `dependants.py`.
+### 🔍 Investigation
 
-### @user123 - 2024-01-16
-Here is a traceback:
+**[14:35] (Claude Code) Understanding JWT validation**
 ```
-Traceback (most recent call last):
-  File "fastapi/dependencies/utils.py", line 234
-  ...
+help me understand how the JWT validation works in auth.rs
+```
+→ Identified missing expiry check
+→ Files: `src/auth.rs:45-67`
+→ Confidence: high
+
+**[14:42] (Claude Code) Exploring test coverage**
+```
+show me existing auth tests
+```
+→ Found `tests/auth_test.rs` but no expiry tests
+→ Files: `tests/auth_test.rs`
+
+### 🔧 Solution
+
+**[15:10] (Claude Code) Implementing expiry check**
+```
+add JWT expiry validation to the verify_token function
+```
+→ Added expiry check with proper error handling
+→ Files: `src/auth.rs:52-58`
+→ Commit: `abc123`
+
+**[15:25] (Cursor) Refining error messages**
+```
+make the error messages more specific for expired tokens
+```
+→ Updated error enum and messages
+→ Files: `src/auth.rs:12-18`, `src/auth.rs:55`
+
+### ✅ Testing
+
+**[15:45] (Claude Code) Writing expiry tests**
+```
+write a test that verifies expired tokens are rejected
+```
+→ Added `test_expired_token_rejected`
+→ Files: `tests/auth_test.rs:89-105`
+→ Commit: `abc124`
+
+---
+
+**Summary:** 6 prompts (3 investigation, 2 solution, 1 testing) across 2 tools
+
+</details>
 ```
 
-### @contributor - 2024-01-17
-I can confirm this on Python 3.11 with uvicorn 0.25.0
-```
-
-**Reinforces the "don't editorialize" principle.**
-
-### 2. CODEMAP.md - Tool-Assisted File Mapping
-
-**How it's generated:**
-1. Extract keywords from issue text (filenames, symbols)
-2. Use local code search to expand likely files and symbols:
-   - `rg -n "<keyword>"` in the repo
-   - `rg --files` + simple substring match
-3. Run existing project tools if present:
-   - `tsc --noEmit --pretty false`
-   - `ruff check --statistics`
-   - `go list ./...`
-   - `cargo metadata`
-4. Capture file paths, module boundaries, public signatures (only if cheap)
-
+**With `--write` flag (file output, more detailed):**
 ```markdown
-# Code Map for Issue #1284
+# Prompt History
 
-## Suspected Files
-- src/dependencies/utils.py (mentioned in traceback)
-- src/dependencies/dependants.py (mentioned by maintainer)
-- src/routing.py (imports dependants)
+> **Generated:** 2024-02-26
+> **Project:** myproject
+> **Branch:** feature/auth-fix
+> **Commits:** abc123, abc124
+> **Time Range:** 14:32 - 16:18 (1h 46m)
 
-## Related Modules
-- fastapi.dependencies
-- fastapi.routing
+## Extraction Details
+- Tools: Claude Code (5 prompts), Cursor (1 prompt)
+- Models: claude-sonnet-4.5, gpt-4
+- Modified files: `src/auth.rs`, `tests/auth_test.rs`
 
-## Existing Tool Signals
-- TypeScript errors: none
-- Lint warnings in utils.py: 2 (unused import, line too long)
-- Test coverage: tests/test_dependencies.py exists
+## Session Overview
+- Investigation: 2 prompts
+- Solution: 2 prompts
+- Testing: 2 prompts
+- Total: 6 curated prompts
+
+[... detailed format similar to PR format but expanded ...]
 ```
-
-**Key insight:** Surfacing where to look, not what to think.
-
-### 3. SIGNALS.md - Ambient Context (Focused)
-
-Issuance collects a small, high-signal set of ambient context that should change your next
-action within 5 minutes of reading the issue. If it doesn't, it doesn't belong here.
-
-```markdown
-# Signals for Issue #1284
-
-## Recent Activity
-- 2024-02-01: "fix: handle None in dependency resolution" (a1b2c3d)
-
-## CI Config
-- Workflows: `ci.yml`, `lint.yml`
-
-## Code Health (Optional)
-- TODO/FIXME count in utils.py: 2
-```
-
-**Constraint:** Keep `SIGNALS.md` to 4–6 bullets total. If a signal doesn't change the immediate
-next action, drop it.
-
-**Human-grade context that AI tools reason over well.**
-
-### 4. RULES.md - Contribution Rules
-
-Generated from deterministic sources (CONTRIBUTING.md, CI configs, repo conventions) and
-synthesized by a local agentic CLI. No new facts should be introduced.
-
-```markdown
-# Contribution Rules for fastapi/fastapi
-
-## Commit Convention
-**Conventional Commits required.** Use `feat:`, `fix:`, `docs:` prefixes.
-
-## Testing
-**Required.** See CONTRIBUTING.md.
-Run: `pytest tests/test_dependencies.py -v`
-
-## Style
-- Formatter: `black`
-- Linter: `ruff`
-- Run: `black . && ruff check .`
-
-## Review Process
-See CONTRIBUTING.md and CODEOWNERS for review expectations.
-
-## Don'ts
-- Don't modify `pyproject.toml` without asking
-- Don't import from `starlette` directly (use `fastapi.` wrappers)
-- Don't squash commits yourself (maintainers do this)
-```
-
-### 5. HANDOFF.md - The AI Tool Entry Point (SECRET WEAPON)
-
-**Short. Very short.** This is the alignment layer.
-
-```markdown
-You are working in the repository `fastapi/fastapi`.
-
-Your goal: Fix the issue described in ISSUE.md.
-
-Constraints:
-- Follow RULES.md
-- Do not invent file paths
-- Ask for clarification only after reviewing CODEMAP.md
-
-Suggested approach:
-1. Inspect utils.py and dependants.py (see CODEMAP.md)
-2. Review SIGNALS.md for recent changes
-3. Run existing tests before making changes
-4. Add tests if behavior is unclear
-```
-
-**This is the alignment layer. The tool already knows where to look.**
-
-### 6. NEXT.md - Immediate Action Plan
-
-`NEXT.md` is generated to reduce first-step paralysis and keep startup cost low.
-
-```markdown
-# Next Actions
-
-1. Run focused tests: `pytest tests/test_dependencies.py -q`
-2. Inspect suspect files: `rg -n "solve_dependencies|dependency_overrides" fastapi/dependencies`
-3. Start implementation in `fastapi/dependencies/utils.py`
-```
-
-### 7. PROMPTS.md - Trust Log (Core)
-
-`PROMPTS.md` is a curated, reviewed log of AI prompts that materially changed investigation,
-implementation, or testing decisions. This is a trust artifact for maintainers, not a raw chat dump.
 
 ---
 
 ## CLI Commands
 
-### `issuance grab <url> [directory]`
-Clones the repository like `git clone` (default folder: repo name, optional custom directory),
-then fetches the issue and generates the context pack.
+### `pmtx extract` (Smart Default - PR Format to Stdout)
+
+Intelligently extracts prompts and outputs PR-ready markdown.
 
 ```bash
-$ issuance grab https://github.com/fastapi/fastapi/issues/1284 fastapi-work
+$ pmtx extract
 
-✓ Cloning fastapi/fastapi (shallow)
-✓ Fetching issue #1284 (12 comments)
-✓ Running language tools...
-  ✓ ruff check --statistics
-  ✓ pytest --collect-only
-✓ Extracting signals (recent commits, CI config, TODO/FIXME)
-✓ Synthesizing RULES.md via OpenCode
-✓ Generating context pack
+🔍 Analyzing workspace...
+  ✓ Branch: feature/auth (created Feb 20)
+  ✓ Found 3 modified files in 2 commits
+  ✓ Time range: 2024-02-26 14:32 - 16:18 (1h 46m)
 
-📁 fastapi-work/.issuance/ ready
+🔎 Loading journal from ~/.promptex/...
+  ✓ Found 18 prompts in time range
+  ✓ Filtered to 6 relevant prompts
 
-Files created:
-  .issuance/RULES.md                                  (project-wide rules)
-  .issuance/issues/1284/ISSUE.md                      (ground truth)
-  .issuance/issues/1284/CODEMAP.md                    (suspected files + tool output)
-  .issuance/issues/1284/SIGNALS.md                    (recent commits, CI config, TODO/FIXME)
-  .issuance/issues/1284/HANDOFF.md                    (AI tool entry point)
-  .issuance/issues/1284/NEXT.md                       (immediate next 3 actions)
-  .issuance/issues/1284/metadata.json                 (issue session metadata)
+📝 Curating prompt log...
+  Investigation: 2 prompts
+  Solution: 2 prompts
+  Testing: 2 prompts
 
-Next: Open your AI tool and say "Fix the issue in .issuance/issues/1284/HANDOFF.md"
+## 🤖 AI Assistance Transparency
+
+<details>
+<summary>View Prompt History (6 prompts over 1h 46m)</summary>
+
+[... PR-formatted markdown output ...]
+
+</details>
+
+💡 Copy the output above and paste into your PR description
 ```
 
-**No paid API calls.** By default, `grab` analyzes `CONTRIBUTING.md`, CI config, and repo
-conventions, then invokes a local agentic CLI (OpenCode) to synthesize `RULES.md`.
+**Smart defaults:**
+- Feature branch → Extract since branch creation
+- Main branch → Prompt for commit range or extract uncommitted
+- Output to stdout (pipe to `gh pr create` or copy/paste)
+- Already redacted (privacy-first journaling)
 
-**Utility defaults:**
-- Fast path first: prioritize project `RULES.md` + issue `ISSUE.md`, `HANDOFF.md`, `NEXT.md`
-- Add issue `CODEMAP.md` and `SIGNALS.md` from local tools without heavy analysis
-- Reserve deeper enrichment for explicit flags (`--deep`) if needed
+### `pmtx extract --write [FILE]`
 
-### `issuance clean`
-Wipes the context folder.
+Write to file instead of stdout.
 
 ```bash
-$ issuance clean
-✓ Removed .issuance/
+# Write to PROMPTS.md
+$ pmtx extract --write
+✓ Written to PROMPTS.md
+
+# Custom filename
+$ pmtx extract -w analysis.md
+✓ Written to analysis.md
+
+# Project-specific location (if repo adopts this standard)
+$ pmtx extract -w .github/prompts/pr-auth-fix.md
 ```
 
-### `issuance prompts extract`
-Builds a curated trust log from AI tool prompts (time-filtered + reviewed).
+### `pmtx extract --commits <N>`
+
+Extract for specific number of recent commits (useful for fork/main workflow).
 
 ```bash
-$ issuance prompts extract
+# Last commit only (single PR from main)
+$ pmtx extract --commits 1
 
-🔍 Extracting prompts since 2024-02-03 16:30
+# Last 3 commits
+$ pmtx extract --commits 3
 
-Found conversations:
-  ✓ OpenCode: 24 prompts (2 hours ago)
-
-📝 Kept after curation: 8 prompts
-
-Investigation:
-  [16:31] (opencode) "help me understand this race condition"
-  [16:45] (opencode) "show me the traceback analysis"
-
-Solution:
-  [17:02] (opencode) "write a fix for cleanup on reused fibers"
-
-Testing:
-  [17:30] (opencode) "generate regression tests"
-
-Include these in PROMPTS.md with evidence links? [y/N/edit] y
-✓ Saved to .issuance/issues/1284/PROMPTS.md
-
-💡 Tip: Review PROMPTS.md and redact any sensitive information before committing
+# Since specific commit
+$ pmtx extract --since-commit abc123
 ```
 
-**How it works:**
-1. Reads `started_at` timestamp from `.issuance/issues/<issue-number>/metadata.json`
-2. Parses tool logs (Claude first, adapters for others later)
-3. Filters prompts after the start timestamp
-4. Keeps only prompts tied to a concrete artifact (file, command, or test)
-5. Categorizes prompts (Investigation, Solution, Testing)
-6. Redacts sensitive values and prompts for review/approval
-7. Generates `.issuance/issues/<issue-number>/PROMPTS.md` with evidence + confidence tags
+### `pmtx extract --uncommitted`
+
+Only extract prompts for uncommitted changes.
+
+```bash
+$ pmtx extract --uncommitted
+
+🔍 Analyzing uncommitted changes...
+  ✓ Found 2 modified files (1 staged, 1 unstaged)
+
+🔎 Extracting related prompts...
+  ✓ Found 8 prompts that touched these files
+
+[... outputs PR-formatted markdown ...]
+```
+
+### `pmtx extract --interactive`
+
+Interactive commit selection (for complex scenarios).
+
+```bash
+$ pmtx extract --interactive
+
+Recent commits:
+  [x] abc125 (2h ago) feat: add JWT expiry validation
+  [x] abc124 (3h ago) test: add expiry tests
+  [ ] abc123 (2 days ago) refactor: clean up auth module
+  [ ] abc122 (3 days ago) fix: unrelated bug
+
+Select commits to include: [space to toggle, enter to confirm]
+
+✓ Extracting prompts for 2 selected commits
+```
+
+### `pmtx record` (Agent-invoked, automatic)
+
+Journal a prompt entry (called automatically by agent skill).
+
+```bash
+# Agent calls this after tool use
+$ pmtx record --prompt "add auth validation" \
+              --files "src/auth.rs" \
+              --tool-calls "Edit,Bash" \
+              --outcome "Added expiry check"
+
+✓ Journaled to ~/.promptex/projects/<project-id>/journal.jsonl
+```
+
+### `pmtx status`
+
+Show current project journal status.
+
+```bash
+$ pmtx status
+
+Project: myproject (github.com/user/myproject)
+Branch: feature/auth
+Journal: ~/.promptex/projects/github-com-user-myproject-abc123/
+
+Prompts logged: 18
+  - feature/auth: 12 prompts
+  - main: 6 prompts
+
+Last journal entry: 5 minutes ago
+Last extraction: 2 hours ago (6 prompts extracted)
+```
+
+### `pmtx projects`
+
+Manage tracked projects.
+
+```bash
+# List all projects
+$ pmtx projects list
+
+myproject (github.com/user/myproject)
+  Path: /Users/dev/myproject
+  Prompts: 18
+  Last accessed: 5 minutes ago
+
+another-project (path-based)
+  Path: /Users/dev/sandbox/test
+  Prompts: 5
+  Last accessed: 3 days ago
+
+# Clean old projects
+$ pmtx projects clean --older-than 30d
+
+# Remove specific project
+$ pmtx projects remove <project-id>
+```
 
 ## Why This Architecture Wins
 
-1. **Zero Marginal Cost** - GitHub API (issues only) + local tools + local agentic CLI
-2. **Deterministic Core** - Base inputs are reproducible; synthesized output may vary
-3. **Debuggable** - You can read and edit every file
-4. **Review Trust** - `PROMPTS.md` captures how conclusions were reached, not just final output
-5. **Model Agnostic** - Works with OpenCode, Cursor, Claude Code, Copilot, whatever wins next week
-6. **Uses the Ecosystem** - Runs `ruff`, `tsc`, `pytest` instead of reinventing them
-7. **Composable** - Each file is standalone, use what you need
+1. **Zero Config** - Smart defaults mean `pmpx extract` just works
+2. **Git-Aware** - Correlates prompts with actual code changes
+3. **Tool Agnostic** - Works with Claude Code, Cursor, Copilot, whatever you use
+4. **Privacy-First** - Auto-detects sensitive values, prompts for review
+5. **Maintainer-Friendly** - PROMPTS.md shows reasoning, not raw chat logs
+6. **Single File Output** - Just commit PROMPTS.md with your PR
+7. **Fast** - Local extraction, no API calls, Rust performance
 
 ---
 
 ## What NOT to Build
 
-- Custom AST walkers (use existing language tools)
-- Deep call graph logic (AI tools handle this)
-- Cross-language parsing (out of scope)
-- MCP server (not a conversational assistant)
-- Per-call API payments (use subscription-based local tools)
-- Global repo index (issue-scoped only)
-- Anything an agent can get faster with `rg`, `git log`, or filesystem inspection
-- Raw prompt dumps without curation, evidence, or redaction
-
----
-
-## Local Agentic Synthesis (Default)
-
-Issuance is designed for local agentic CLIs by default. After generating deterministic facts,
-`grab` invokes OpenCode (via `opencode` CLI) to synthesize `RULES.md`.
-
-**How it works:**
-1. `issuance` generates base files deterministically (GitHub API + language tools)
-2. Invokes `opencode` CLI with a specific prompt to synthesize `RULES.md`
-3. If `opencode` is not available, falls back to deterministic output
+- Prompt analytics or dashboards (just extraction)
+- Real-time session monitoring (post-hoc analysis only)
+- Prompt optimization or suggestions (maintainer trust focus)
+- Multi-user collaboration features (single-user workflow)
+- Cloud sync or storage (local-only)
+- Automatic PR creation (just generate PROMPTS.md)
+- Raw chat dumps without curation
+- Deep semantic analysis of prompts (keep it simple)
 
 ---
 
@@ -351,9 +400,6 @@ Issuance is designed for local agentic CLIs by default. After generating determi
 | Terminal UI | indicatif + console | Progress bars, colors, styling |
 | Config | TOML (~/.issuance/config.toml) | Standard, editable |
 | Output | Markdown files | Human-readable, AI-consumable |
-
-### Recommended Tools
-- `rust-analyzer` (editor integration)
 
 ### Why Rust Over Python
 - **Single binary distribution** - No runtime deps, just download and run
@@ -374,280 +420,518 @@ Issuance is designed for local agentic CLIs by default. After generating determi
 
 ## Project Structure
 
+### Source Code
 ```
-issuance/
+promptex/
 ├── Cargo.toml              # Dependencies + metadata
 ├── src/
 │   ├── main.rs             # Entry point, clap CLI setup
-│   ├── config.rs           # Config loading (~/.issuance/config.toml)
+│   ├── config.rs           # Config loading (~/.promptex/config.toml)
+│   ├── project_id.rs       # Project identification (git remote, path hash)
 │   ├── commands/
 │   │   ├── mod.rs
-│   │   ├── grab.rs         # issuance grab <url>
-│   │   └── clean.rs        # issuance clean
-│   ├── services/
+│   │   ├── extract.rs      # pmtx extract (smart scoping + output)
+│   │   ├── record.rs       # pmtx record (agent-invoked journaling)
+│   │   ├── status.rs       # pmtx status (project journal info)
+│   │   └── projects.rs     # pmtx projects (manage tracked projects)
+│   ├── journal/
 │   │   ├── mod.rs
-│   │   ├── github.rs       # GitHub API (issues + comments only)
-│   │   ├── agentic.rs      # Local agentic CLI integration (OpenCode)
-│   │   ├── tools.rs        # Local tooling + local signal collectors
-│   │   ├── extractor.rs    # Keyword/file extraction (no model use)
-│   │   └── generator.rs    # Render templates → context files
-│   └── templates/
-│       ├── mod.rs          # Template embedding
-│       ├── issue.md.tera
-│       ├── codemap.md.tera
-│       ├── signals.md.tera
-│       ├── rules.md.tera
-│       ├── handoff.md.tera
-│       └── next.md.tera
+│   │   ├── entry.rs        # JournalEntry struct
+│   │   ├── writer.rs       # Append to journal.jsonl
+│   │   └── reader.rs       # Load and filter journal
+│   ├── extractors/
+│   │   ├── mod.rs
+│   │   ├── traits.rs       # PromptExtractor trait
+│   │   └── claude_code.rs  # Parse Claude Code logs (Phase 3)
+│   ├── analysis/
+│   │   ├── mod.rs
+│   │   ├── git.rs          # Git operations (status, diff, log, branch info)
+│   │   ├── scope.rs        # Determine extraction scope (commits, files, time)
+│   │   └── correlation.rs  # Match prompts to files/commits
+│   ├── curation/
+│   │   ├── mod.rs
+│   │   ├── filter.rs       # Remove low-value prompts
+│   │   ├── categorize.rs   # Investigation/Solution/Testing
+│   │   └── redact.rs       # Sensitive value detection (for journaling)
+│   └── output/
+│       ├── mod.rs
+│       ├── pr_format.rs    # Collapsible PR description format (default)
+│       └── detailed.rs     # Detailed file format (--write)
 ├── README.md
 └── tests/
-    ├── extractor_test.rs
-    ├── generator_test.rs
-    └── ai_logs_test.rs
+    ├── git_test.rs
+    ├── scope_test.rs
+    ├── journal_test.rs
+    └── curation_test.rs
 ```
 
-**No database. No server. No paid API calls.**
-The `.issuance/` folder IS the output.
+### User Data (Home Directory)
+```
+~/.promptex/
+├── config.toml                              # Global config
+├── projects/
+│   ├── github-com-user-myproject-abc123/    # Project-specific state
+│   │   ├── journal.jsonl                    # Continuous append-only log
+│   │   └── metadata.json                    # Project info, branch tracking
+│   └── github-com-org-another-def456/
+│       ├── journal.jsonl
+│       └── metadata.json
+└── cache/                                   # (Future: parsed log cache)
+```
+
+**No database. No server. No paid API calls. No project directory pollution.**
+Output is PR-formatted markdown (stdout) or optional file via `--write`.
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: CLI Scaffold (✅ COMPLETE)
+### Phase 1: CLI Scaffold ✅
 
-**Goal:** Basic CLI structure, `issuance --help` works
+**Goal:** Basic CLI structure with command parsing
 
 **Deliverable:**
 ```bash
-$ issuance --help
+$ pmtx --help
 Commands:
-  grab     Fetch an issue and generate context pack
-  clean    Remove .issuance/ folder
+  extract    Extract prompts (smart defaults, PR format)
+  record     Journal a prompt entry (agent-invoked)
+  status     Show project journal status
+  projects   Manage tracked projects
 ```
 
-**Status:** Complete. All commands parse correctly, clean command fully functional.
-
-**Implementation notes (current):**
-- Clap-based CLI is wired up with `grab` and `clean`
-- Config loading from `~/.issuance/config.toml` is implemented
-- `clean` command is implemented end-to-end
+**Status:** Can reuse existing clap setup, update command names
 
 ---
 
-### Phase 2: `issuance grab` - Core Pipeline (IN PROGRESS)
+### Phase 2: Project ID & Home Directory Storage
 
-**Goal:** Full context pack generation, including RULES.md synthesis via local agentic CLI
+**Goal:** Identify projects and set up home directory storage structure
 
 **Files:**
 ```
 src/
-├── commands/grab.rs
-├── services/
-│   ├── github.rs       # Issue + comments + repository clone
-│   ├── agentic.rs      # Local agentic CLI integration (OpenCode)
-│   ├── tools.rs        # Run language tools + collect local signals
-│   ├── extractor.rs    # Keywords, file mentions
-│   └── generator.rs    # Generate all context files
-└── templates/
-    ├── issue.md.tera
-    ├── codemap.md.tera
-    ├── signals.md.tera
-    ├── rules.md.tera
-    ├── handoff.md.tera
-    └── next.md.tera
+├── project_id.rs       # Project identification logic
+└── journal/
+    ├── writer.rs       # Append to journal.jsonl
+    └── reader.rs       # Load journal entries
 ```
 
-**`services/github.rs`:**
+**Key functions:**
 ```rust
-pub async fn fetch_issue(owner: &str, repo: &str, issue_num: u64) -> Result<Issue>
-pub async fn fetch_comments(owner: &str, repo: &str, issue_num: u64) -> Result<Vec<Comment>>
-pub fn clone_repo(owner: &str, repo: &str, destination: Option<&Path>, shallow: bool) -> Result<PathBuf>
+// project_id.rs
+pub fn get_project_id(cwd: &Path) -> Result<String> {
+    // 1. Try git remote origin → hash URL
+    // 2. Fallback: git root path → hash path
+    // Returns: "github-com-user-repo-abc123"
+}
+
+pub fn get_project_dir(project_id: &str) -> PathBuf {
+    home_dir().join(".promptex/projects").join(project_id)
+}
+
+pub fn ensure_project_dir(project_id: &str) -> Result<PathBuf>
+
+// journal/writer.rs
+pub fn append_entry(project_id: &str, entry: &JournalEntry) -> Result<()>
+
+// journal/reader.rs
+pub fn load_journal(project_id: &str) -> Result<Vec<JournalEntry>>
 ```
 
-**`services/tools.rs`:**
-```rust
-pub fn detect_project_type(repo_path: &Path) -> ProjectType  // Python, TypeScript, Go, Rust
-pub fn run_linter(repo_path: &Path, project_type: ProjectType) -> Result<Option<LintOutput>>
-pub fn discover_tests(repo_path: &Path, project_type: ProjectType) -> Result<Vec<String>>
-pub fn collect_ci_config(repo_path: &Path) -> Result<Vec<String>>
-pub fn collect_recent_commits(repo_path: &Path, paths: &[String], limit: usize) -> Result<Vec<String>>
-pub fn collect_todo_fixme(repo_path: &Path, paths: &[String]) -> Result<Vec<String>>
-```
-
-**`services/extractor.rs`:**
-```rust
-pub fn extract_keywords(text: &str) -> Vec<String>  // filenames, symbols
-pub fn extract_mentioned_files(text: &str, repo_files: &[String]) -> Vec<String>
-pub fn extract_stack_traces(text: &str) -> Vec<StackTrace>
-```
-
-**Deliverable:** Project-level `.issuance/RULES.md` + issue-scoped context folder with 6 files + `metadata.json`.
-
-**Additional:** Create issue-scoped `metadata.json` with session start timestamp for prompt extraction.
+**Deliverable:**
+- `~/.promptex/projects/<id>/` directory creation
+- `journal.jsonl` append working
+- `metadata.json` tracking
 
 ---
 
-### Phase 3: Prompt Transparency (NEXT PRIORITY)
+### Phase 3: Git Analysis & Smart Scoping (CRITICAL PATH)
 
-**Goal:** Generate a maintainer-trustworthy reasoning log, not a raw transcript
+**Goal:** Determine what to extract based on git state
 
-**Why this matters:**
-- Increases trust by showing how conclusions were reached
-- Reduces "AI slop" concerns with inspectable reasoning artifacts
-- Gives maintainers concrete evidence paths (files, tests, commands)
+**Files:**
+```
+src/analysis/
+├── git.rs          # Git operations (status, diff, log, branch info)
+└── scope.rs        # Determine extraction scope
+```
 
-**Scope (OpenCode first):**
-1. **OpenCode** - `~/.config/opencode/sessions.db`
-2. Adapter hooks for Codex/Claude later (same normalized schema)
+**Key functions:**
+```rust
+// git.rs
+pub fn current_branch() -> Result<String>
+pub fn is_mainline_branch(branch: &str) -> bool  // main/master/develop
+pub fn branch_creation_time(branch: &str) -> Result<DateTime>
+pub fn parent_branch(branch: &str) -> Result<String>  // Where branch diverged
+pub fn modified_files() -> Result<Vec<PathBuf>>  // git status + diff
+pub fn commits_in_range(range: &str) -> Result<Vec<Commit>>
+pub fn files_in_commits(commits: &[Commit]) -> Vec<PathBuf>
+
+// scope.rs
+pub enum ExtractionScope {
+    BranchLifetime(String),      // Feature branch: since creation
+    Commits(usize),              // Last N commits
+    CommitRange(String, String), // Specific range
+    Uncommitted,                 // Only uncommitted changes
+    Interactive,                 // User selects commits
+}
+
+pub fn determine_smart_scope() -> Result<ExtractionScope> {
+    // 1. Feature branch? → BranchLifetime
+    // 2. Main with uncommitted? → Prompt user
+    // 3. Main without uncommitted? → Commits(1) or Interactive
+}
+```
+
+**Deliverable:** Smart scope detection working for all workflows
+
+---
+
+### Phase 4: Journaling (Agent Integration Foundation)
+
+**Goal:** Record prompts to journal with redaction
 
 **Files:**
 ```
 src/
-├── commands/
-│   └── prompts.rs          # extract + review + export-pr-summary
-└── services/
-    └── ai_logs.rs          # extraction, curation, redaction, normalization
+├── commands/record.rs     # pmtx record command
+└── curation/redact.rs     # Immediate redaction during journaling
 ```
 
-**Commands:**
-```bash
-# Build curated trust log for current issue session
-issuance prompts extract
-
-# Review/redact entries before writing PROMPTS.md
-issuance prompts review
-
-# Generate PR-ready transparency section from PROMPTS.md
-issuance prompts export-pr-summary
-```
-
-**Normalized entry schema (`ai_logs.rs`):**
+**Journal entry structure:**
 ```rust
-#[derive(Debug)]
-pub struct SessionMetadata {
-    pub tool: String,              // "opencode"
-    pub model: Option<String>,     // e.g. "gpt-5-codex"
-    pub cli_version: Option<String>,
-    pub agentic_environment: Option<String>, // codex-cli, opencode desktop, etc.
-    pub os: Option<String>,        // macOS/Linux
-    pub shell: Option<String>,     // zsh/bash
-}
-
-#[derive(Debug)]
-pub struct PromptEntry {
-    pub tool: String,             // "opencode"
-    pub timestamp: String,        // ISO-8601
-    pub intent: Intent,           // Investigation | Solution | Testing
-    pub prompt: String,           // Redacted text
-    pub artifact: String,         // File path, command, or test name
-    pub result: String,           // What changed or what was ruled out
-    pub confidence: Confidence,   // low | medium | high
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JournalEntry {
+    pub timestamp: DateTime<Utc>,
+    pub branch: String,
+    pub commit: String,
+    pub prompt: String,           // Already redacted
+    pub files_touched: Vec<String>,
+    pub tool_calls: Vec<String>,  // "Edit", "Bash", "Read"
+    pub outcome: String,
+    pub tool: String,             // "claude-code", "cursor"
+    pub model: Option<String>,
 }
 ```
 
-**Curation rules (non-negotiable):**
-1. Keep only prompts tied to a concrete artifact (`file`, `command`, or `test`)
-2. Keep failed hypotheses if they changed direction
-3. Drop repetitive prompts that produced no action
-4. Always run sensitive-value detection + user review before write
+**Redaction (privacy-first):**
+```rust
+// redact.rs
+pub fn redact_sensitive_values(text: &str) -> (String, Vec<Redaction>)
+// Detects and redacts:
+// - API keys (patterns: sk-*, ghp_*, etc.)
+// - Tokens (JWT patterns)
+// - Credentials (password=*, auth=*)
+// - Email addresses (optional)
+// - IP addresses (optional)
 
-**Timestamp window strategy:**
-1. `grab` writes `.issuance/issues/<issue-number>/metadata.json` with `started_at`
-2. `prompts extract` only considers entries with `timestamp >= started_at`
+pub fn record_prompt(prompt: &str, context: &Context) -> Result<()> {
+    let (redacted, redactions) = redact_sensitive_values(prompt);
 
-**Generated `PROMPTS.md` (curated):**
-```markdown
-# Prompting Session for Issue #1284
+    if !redactions.is_empty() {
+        warn!("🔒 Redacted {} sensitive values", redactions.len());
+    }
 
-> Generated from local AI logs (curated)
-> Extracted: 2024-02-03 18:45
-> Tool: OpenCode
-> Model: gpt-5-codex
-> Agentic environment: Codex CLI
-> CLI version: 0.24.0
-> OS/Shell: macOS / zsh
+    let entry = JournalEntry {
+        prompt: redacted,  // Safe by default
+        // ... other fields
+    };
 
-## Investigation
-- [16:31] Prompt: "help me understand this race condition in utils.py"
-  Artifact: `fastapi/dependencies/utils.py`
-  Result: Identified cleanup path with missing guard
-  Confidence: medium
-
-## Solution
-- [17:25] Prompt: "write a fix that prevents cleanup on reused fibers"
-  Artifact: `fastapi/dependencies/dependants.py`
-  Result: Added guard condition and updated call path
-  Confidence: high
-
-## Testing
-- [17:40] Prompt: "write a test that reproduces the memory leak"
-  Artifact: `tests/test_dependencies.py::test_cleanup_on_reused_fibers`
-  Result: Added regression test, passing locally
-  Confidence: high
+    append_to_journal(project_id, entry)
+}
 ```
 
-**PR transparency export (`issuance prompts export-pr-summary`):**
-```markdown
-## AI Assistance Transparency
-
-- Tool: OpenCode
-- Model: gpt-5-codex
-- Agentic environment: Codex CLI
-- Session window: 2024-02-03T16:30:00Z to 2024-02-03T18:45:00Z
-- Kept prompts: 8 (curated from 24)
-
-### Reasoning Evidence
-- Investigation: linked to `fastapi/dependencies/utils.py`
-- Solution: linked to `fastapi/dependencies/dependants.py`
-- Testing: linked to `tests/test_dependencies.py::test_cleanup_on_reused_fibers`
-```
-
-**Privacy controls:**
-- Metadata fields are collected as optional and can be redacted before export
-- `prompts review` supports removing model/tool/environment details per entry or globally
-
-**Deliverables:**
-- `issuance prompts extract` with curation + redaction
-- `PROMPTS.md` with artifact/result/confidence + optional session metadata
-- `issuance prompts export-pr-summary` with environment/model transparency fields
+**Deliverable:** `pmtx record` working, privacy-safe journaling
 
 ---
 
-### Phase 4: Polish (TODO)
+### Phase 5: Correlation & Filtering
+
+**Goal:** Match journal prompts to extraction scope
+
+**Files:**
+```
+src/analysis/correlation.rs
+```
+
+**Key functions:**
+```rust
+pub fn filter_journal_by_scope(
+    journal: &[JournalEntry],
+    scope: &ExtractionScope,
+    git_ctx: &GitContext,
+) -> Vec<JournalEntry> {
+    // 1. Get files in scope (from commits or git status)
+    // 2. Get time range for scope
+    // 3. Filter journal entries that:
+    //    - Touched files in scope
+    //    - Within time range
+    //    - On relevant branch (for context)
+}
+
+pub fn has_artifact(entry: &JournalEntry) -> bool {
+    // Must have file edits, commands, or meaningful investigation
+    !entry.tool_calls.is_empty() ||
+    !entry.files_touched.is_empty()
+}
+```
+
+**Deliverable:** Filtered, scoped prompt extraction working
+
+---
+
+### Phase 6: Curation & Categorization
+
+**Goal:** Categorize and enrich filtered prompts
+
+**Files:**
+```
+src/curation/
+├── filter.rs       # Remove repetitive/low-value
+└── categorize.rs   # Investigation/Solution/Testing
+```
+
+**Categorization:**
+```rust
+pub enum Intent {
+    Investigation,  // Reading code, understanding
+    Solution,       // Writing code, implementing
+    Testing,        // Running tests, validation
+}
+
+pub fn categorize(entry: &JournalEntry) -> Intent {
+    // Heuristics:
+    // - Contains "understand", "explain", "show me" → Investigation
+    // - Contains "implement", "add", "fix", "write" → Solution
+    // - Contains "test", "verify", "check" → Testing
+    // - Tool calls: mostly Read → Investigation
+    // - Tool calls: Edit/Write → Solution
+    // - Tool calls: Bash (test commands) → Testing
+}
+
+pub fn remove_duplicates(entries: Vec<JournalEntry>) -> Vec<JournalEntry> {
+    // Remove near-identical prompts (typo corrections, minor rephrases)
+}
+```
+
+**Deliverable:** Categorized, deduplicated prompts
+
+---
+
+### Phase 7: Output Generation
+
+**Goal:** Generate PR format (stdout) and detailed format (--write)
+
+**Files:**
+```
+src/output/
+├── pr_format.rs    # Collapsible PR description (default)
+└── detailed.rs     # Full PROMPTS.md format (--write)
+```
+
+**PR format (stdout):**
+```rust
+pub fn generate_pr_format(prompts: &[CuratedPrompt], ctx: &ExtractionContext) -> String {
+    // Outputs:
+    // ## 🤖 AI Assistance Transparency
+    // <details>
+    // <summary>View Prompt History (N prompts)</summary>
+    // ... categorized prompts ...
+    // </details>
+}
+```
+
+**Detailed format (--write):**
+```rust
+pub fn generate_detailed_format(prompts: &[CuratedPrompt], ctx: &ExtractionContext) -> String {
+    // More verbose, includes all metadata
+}
+```
+
+**Deliverable:** `pmtx extract` outputs PR-ready markdown
+
+---
+
+### Phase 8: Agent Skill Integration
+
+**Goal:** Make pmtx callable as agent skill for automatic journaling
+
+**Files:**
+```
+skill.json or agent integration docs
+```
+
+**Agent skill definition:**
+```json
+{
+  "name": "pmtx-record",
+  "description": "Journal AI prompt for session history",
+  "trigger": "after_tool_call",
+  "command": "pmtx record --prompt '{prompt}' --files '{files}' --tool-calls '{tools}' --outcome '{outcome}'"
+}
+```
+
+**Agent workflow:**
+1. User asks agent to make changes
+2. Agent invokes tools (Edit, Bash, etc.)
+3. After tool invocation, agent automatically calls `pmtx record`
+4. Entry appended to journal (already redacted)
+5. When user creates PR, agent suggests: `pmtx extract | gh pr create`
+
+**Deliverable:** Documented agent integration, working auto-journaling
+
+---
+
+### Phase 9: Polish & Commands
+
+**Additional commands:**
+```
+pmtx status      # Show journal stats for current project
+pmtx projects    # List/manage tracked projects
+```
 
 **Rich CLI output (indicatif + console):**
-- Progress spinners
-- Colored file summaries
-- Tables for signals
-- Better error messages
+- Progress spinners for extraction
+- Colored category headers (Investigation/Solution/Testing)
+- File/commit correlation display
+- Clear redaction warnings during journaling
 
-**Config (`~/.issuance/config.toml`):**
+**Config (`~/.promptex/config.toml`):**
 ```toml
-[github]
-token = "ghp_xxx"
+[project]
+identify_by = "git_remote"    # or "git_root" for separate journals per clone
 
-[defaults]
-shallow_clone = true
-pr_limit = 50
+[journaling]
+auto_redact = true            # Redact sensitive values on journal write
+warn_on_redaction = true      # Show warning when redacting
 
-[prompts]
-auto_extract = false  # Prompt to extract after solving
-tools = ["opencode"]  # Adapter hooks for others later
-include_session_metadata = true   # model, cli version, environment, os/shell
-redact_session_metadata = false   # force-hide metadata in exported PR summary
+[extraction]
+default_format = "pr"         # or "detailed"
+interactive_on_main = true    # Prompt for commit range when on main branch
+
+[output]
+include_tool_metadata = true  # Show tool/model in output
+include_timestamps = true     # Show prompt timestamps
 ```
 
 **Tests:**
-- Unit tests for extractors
-- Unit tests for AI log parsers
-- Integration test with real issue
-- Mock AI tool logs for testing
+- Unit tests for git analysis (scope detection, branch operations)
+- Unit tests for journaling (append, redaction)
+- Unit tests for correlation (file matching, time filtering)
+- Unit tests for curation (categorization, deduplication)
+- Integration test with mock journal
+- Redaction detection tests
 
 **Build & Distribute:**
 ```bash
 cargo build --release
-# Binary at target/release/issuance (~5MB)
+# Binary at target/release/pmtx (~3MB)
 cargo install --path .
+```
+
+---
+
+## Interactive Output (UX Enhancement)
+
+When `pmtx extract` outputs to a terminal (not piped), show interactive prompt:
+
+### UX Flow
+
+```bash
+$ pmtx extract
+
+🔍 Analyzing workspace...
+  ✓ Branch: feature/auth
+  ✓ Found 6 prompts in 2 commits
+
+## 🤖 Prompt History
+
+<details>
+<summary>6 prompts over 1h 46m - Click to expand</summary>
+
+[... full PR-formatted markdown ...]
+
+</details>
+
+┌─────────────────────────────────────────┐
+│  'c' - Copy to clipboard                │
+│  'w' - Write to PROMPTS.md              │
+│  Enter/other key - Exit                 │
+└─────────────────────────────────────────┘
+```
+
+**When piping (non-TTY):**
+```bash
+$ pmtx extract | gh pr create --body-file -
+# No interactive prompt - just outputs markdown directly
+```
+
+### Implementation
+
+**Dependencies:**
+```toml
+arboard = "3.3"        # Cross-platform clipboard
+crossterm = "0.27"     # Terminal interaction
+```
+
+**Key functions:**
+```rust
+// src/output/interactive.rs
+pub fn output_with_interactive(markdown: &str) -> Result<()> {
+    // Print markdown
+    println!("{}", markdown);
+
+    // Only interactive if stdout is TTY
+    if !io::stdout().is_terminal() {
+        return Ok(());
+    }
+
+    // Show prompt and handle keypresses
+    show_interactive_prompt(markdown)
+}
+
+fn show_interactive_prompt(markdown: &str) -> Result<()> {
+    println!("\n┌─────────────────────────────────────────┐");
+    println!("│  'c' - Copy to clipboard                │");
+    println!("│  'w' - Write to PROMPTS.md              │");
+    println!("│  Enter/other key - Exit                 │");
+    println!("└─────────────────────────────────────────┘");
+
+    terminal::enable_raw_mode()?;
+
+    let result = match event::read()? {
+        Event::Key(KeyEvent { code: KeyCode::Char('c'), .. }) => {
+            copy_to_clipboard(markdown)?;
+            println!("\r✓ Copied to clipboard!");
+            Ok(())
+        }
+        Event::Key(KeyEvent { code: KeyCode::Char('w'), .. }) => {
+            write_to_file(markdown, "PROMPTS.md")?;
+            println!("\r✓ Written to PROMPTS.md");
+            Ok(())
+        }
+        _ => Ok(()),
+    };
+
+    terminal::disable_raw_mode()?;
+    result
+}
+
+fn copy_to_clipboard(text: &str) -> Result<()> {
+    let mut clipboard = Clipboard::new()?;
+    clipboard.set_text(text)?;
+    Ok(())
+}
+```
+
+**Graceful degradation (Linux without clipboard):**
+```rust
+fn clipboard_available() -> bool {
+    Clipboard::new().is_ok()
+}
+
+// If clipboard not available, only show 'w' option
 ```
 
 ---
@@ -656,63 +940,160 @@ cargo install --path .
 
 | Day | Phase | Deliverable |
 |-----|-------|-------------|
-| 1 | Scaffold | ✅ CLI structure, `issuance --help` works |
-| 2-4 | Grab | Repo clone + project/issue context generation |
-| 5-7 | Prompt Transparency | Curated PROMPTS.md + PR summary export |
-| 8 | Polish | Rich output, tests, installable binary |
+| 1 | Scaffold & Project ID | ✅ CLI structure, home dir storage |
+| 1-2 | Git Analysis & Scoping | Smart scope detection (branch/commits) |
+| 2-3 | Journaling & Redaction | `pmtx record`, privacy-safe journaling |
+| 3-4 | Correlation & Filtering | Match journal to scope, filter by files |
+| 4-5 | Curation & Categorization | Dedupe, categorize, enrich prompts |
+| 5-6 | Output Generation | PR format (stdout) + detailed (--write) |
+| 6-7 | Agent Integration | Skill definition, auto-journaling docs |
+| 7-8 | Polish & Commands | `status`, `projects`, interactive output (clipboard), config, tests |
 
-**Total: ~8 days**
+**Total: ~8 days** (foundational + agent integration + polish)
+
+**Note:** Claude Code log parsing skipped initially - agent integration via `pmtx record` is primary path. Can add log parsing later for retroactive extraction.
 
 ---
 
 ## Verification
 
+### Build & Install
 ```bash
-# 1. Build
-cd issuance
+cd promptex
 cargo build --release
-
-# 2. Install globally (optional)
 cargo install --path .
 
-# 3. Test grab (clone + context generation)
-issuance grab https://github.com/fastapi/fastapi/issues/1284 fastapi-work
-ls fastapi-work/.issuance/
-# Should see: RULES.md, issues/
-ls fastapi-work/.issuance/issues/1284/
-# Should see: ISSUE.md, CODEMAP.md, SIGNALS.md, HANDOFF.md, NEXT.md, metadata.json
+# Verify installation
+pmtx --help
+```
 
-# 4. Work with AI tools
-opencode "help me understand this race condition"
-opencode "write a fix for the cleanup issue"
+### Full Workflow: Feature Branch
 
-# 5. Extract prompts (time-filtered)
-issuance prompts extract
-ls fastapi-work/.issuance/issues/1284/
-# Now also see: PROMPTS.md
+```bash
+# Create feature branch
+cd ~/myproject
+git checkout -b feature/auth-fix
 
-cat fastapi-work/.issuance/issues/1284/PROMPTS.md
-# Should show categorized prompts from your session
+# Work with agent (agent automatically journals via pmtx record)
+# Agent: [Invokes pmtx record after each significant action]
 
-# 5b. Generate PR transparency summary
-issuance prompts export-pr-summary
+# Check journal status
+pmtx status
+# Project: myproject (github.com/user/myproject)
+# Branch: feature/auth-fix
+# Prompts logged: 8
+# Last journal entry: 2 minutes ago
 
-# 6. Full workflow example
-cd ~/some-project
-issuance grab https://github.com/owner/repo/issues/123 repo-workdir
+# Extract prompts (smart default: branch lifetime)
+pmtx extract
+# ✓ Branch: feature/auth-fix (created Feb 20)
+# ✓ Found 8 prompts in 2 commits
+# ✓ Curated to 6 prompts
+#
+# ## 🤖 Prompt History
+# <details>
+# <summary>6 prompts over 1h 46m - Click to expand</summary>
+# [... PR-formatted markdown ...]
+# </details>
+#
+# ┌─────────────────────────────────────────┐
+# │  'c' - Copy to clipboard                │
+# │  'w' - Write to PROMPTS.md              │
+# │  Enter/other - Exit                     │
+# └─────────────────────────────────────────┘
 
-# Work with your preferred AI tool
-opencode "Fix the issue described in .issuance/issues/123/HANDOFF.md"
+[User presses 'c']
+✓ Copied to clipboard!
 
-# After solving, extract and include your prompts
-issuance prompts extract
+# Create PR (paste from clipboard)
+gh pr create --title "Fix auth validation"
+# (Paste into PR description field)
 
-# Review the full context pack
-ls -la repo-workdir/.issuance/
-# RULES.md, issues/
-ls -la repo-workdir/.issuance/issues/123/
-# ISSUE.md, CODEMAP.md, SIGNALS.md, HANDOFF.md, NEXT.md, PROMPTS.md, metadata.json
+# Or write to file if repo wants it
+pmtx extract -w .github/prompts/pr-auth-fix.md
+git add .github/prompts/pr-auth-fix.md
+git commit -m "feat: auth fix with prompt log"
+```
 
-# Clean up when done
-issuance clean
+### Full Workflow: Fork/Main Branch
+
+```bash
+# Fork workflow (working on main)
+cd ~/fork-of-upstream
+git checkout main
+
+# Work with agent
+# Agent: [Journals prompts automatically]
+
+# Make commits
+git commit -m "fix: auth bug"
+git push origin main
+
+# Extract for single commit (interactive on main)
+pmtx extract
+# ⚠ Working on main branch
+# How many commits to extract?
+#   [1] Last commit only (recommended)
+#   [2] Last 3 commits
+#   [3] Uncommitted only
+# Choice: 1
+#
+# ✓ Extracting prompts for commit abc123
+# [... PR-formatted output ...]
+
+# Or explicit
+pmtx extract --commits 1
+
+# Create PR to upstream
+gh pr create --repo upstream/repo \
+  --base main \
+  --title "Fix auth bug" \
+  --body "$(pmtx extract --commits 1)"
+```
+
+### Workflow: Multiple PRs from Same Project
+
+```bash
+# PR #1
+git checkout -b feature/auth
+# ... work ...
+pmtx extract > /tmp/pr1.txt
+gh pr create --body-file /tmp/pr1.txt
+
+# PR #2 (concurrent)
+git checkout main
+git checkout -b feature/logging
+# ... work ...
+pmtx extract > /tmp/pr2.txt
+gh pr create --body-file /tmp/pr2.txt
+
+# Each extraction automatically isolated by branch!
+```
+
+### Check Project Status
+
+```bash
+# See all tracked projects
+pmtx projects list
+# myproject (github.com/user/myproject)
+#   Path: /Users/dev/myproject
+#   Prompts: 18 across 2 branches
+#   Last accessed: 5 minutes ago
+
+# Clean old projects
+pmtx projects clean --older-than 30d
+```
+
+### Manual Journaling (Without Agent Integration)
+
+```bash
+# If agent doesn't auto-journal, you can manually record
+pmtx record \
+  --prompt "implement JWT expiry validation" \
+  --files "src/auth.rs" \
+  --tool-calls "Edit,Bash" \
+  --outcome "Added expiry check and tests"
+
+# Then extract as normal
+pmtx extract
 ```
