@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod analysis;
 mod commands;
 mod journal;
 mod project_id;
