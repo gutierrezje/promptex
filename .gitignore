@@ -25,5 +25,4 @@ coverage/
 count.txt
 todos.json
 
-# Issuance output
-.issuance/
+PLAN.md
