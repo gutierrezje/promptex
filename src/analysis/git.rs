@@ -25,6 +25,12 @@ pub struct Commit {
 
 // ── Branch helpers ────────────────────────────────────────────────────────────
 
+/// Return the abbreviated SHA of the current HEAD commit.
+pub fn current_commit() -> Result<String> {
+    let out = git(&["rev-parse", "--short", "HEAD"])?;
+    Ok(out.trim().to_string())
+}
+
 /// Return the name of the currently checked-out branch.
 ///
 /// Errors if the repo is in detached HEAD state.

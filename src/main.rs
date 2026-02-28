@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 
 mod analysis;
 mod commands;
+mod curation;
 mod journal;
 mod project_id;
 
