@@ -122,7 +122,8 @@ pub fn execute(
             eprintln!("\n✓ Written to {path}");
         }
         Some(None) => {
-            let path = project_id::get_project_dir(&pid)?.join("PROMPTS.md");
+            let ts = chrono::Utc::now().format("%Y%m%d-%H%M");
+            let path = project_id::get_project_dir(&pid)?.join(format!("PROMPTS-{ts}.md"));
             std::fs::write(&path, &markdown)?;
             eprintln!("\n✓ Written to {}", path.display());
             if let Err(e) = open::that(&path) {
