@@ -7,6 +7,7 @@ use crate::analysis::scope::{determine_scope, ExtractionScope, ScopeFlags};
 use crate::curation::categorize::{categorize, Intent};
 use crate::curation::filter::{apply_artifact_filter, remove_duplicates};
 use crate::extractors;
+use crate::output::interactive;
 use crate::output::pr_format;
 use crate::project_id;
 
@@ -15,12 +16,13 @@ pub fn execute(
     commits: Option<usize>,
     since_commit: Option<String>,
     branch_lifetime: bool,
+    since_duration: Option<String>,
     write_to: Option<Option<String>>,
 ) -> Result<()> {
     let cwd = env::current_dir()?;
 
     // ── Step 1: Determine scope ───────────────────────────────────────────────
-    let flags = ScopeFlags { uncommitted, commits, since_commit, branch_lifetime };
+    let flags = ScopeFlags { uncommitted, commits, since_commit, branch_lifetime, since_duration };
     let scope = determine_scope(&flags)?;
 
     eprintln!("🔍 Analyzing workspace...");
@@ -36,6 +38,9 @@ pub fn execute(
         }
         ExtractionScope::Uncommitted => {
             eprintln!("  ✓ Scope: uncommitted changes only");
+        }
+        ExtractionScope::SinceTime(since) => {
+            eprintln!("  ✓ Scope: since {}", since.format("%Y-%m-%d %H:%M UTC"));
         }
     }
 
@@ -110,6 +115,7 @@ pub fn execute(
         }
         None => {
             println!("{markdown}");
+            interactive::maybe_prompt(&markdown)?;
         }
     }
 

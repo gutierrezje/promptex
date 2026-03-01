@@ -120,6 +120,14 @@ pub fn last_n_commits(n: usize) -> Result<Vec<Commit>> {
     load_commits(&["log", &n_str, "--format=%H|%h|%aI|%s", "--reverse"])
 }
 
+/// Load all commits authored after `since` (exclusive lower bound by timestamp).
+///
+/// Returned in chronological order (oldest first).
+pub fn commits_since_time(since: DateTime<Utc>) -> Result<Vec<Commit>> {
+    let since_str = since.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    load_commits(&["log", &format!("--after={since_str}"), "--format=%H|%h|%aI|%s", "--reverse"])
+}
+
 // ── Internals ─────────────────────────────────────────────────────────────────
 
 /// Run `git <args>` and return stdout as a String. Errors on non-zero exit.

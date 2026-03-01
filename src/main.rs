@@ -38,6 +38,10 @@ enum Commands {
         #[arg(long)]
         branch_lifetime: bool,
 
+        /// Extract prompts from the last duration (e.g. 2h, 1d, 3w)
+        #[arg(long, value_name = "DURATION")]
+        since: Option<String>,
+
         /// Write output to a file instead of stdout
         #[arg(long, short = 'w', value_name = "FILE")]
         write: Option<Option<String>>,
@@ -97,8 +101,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Extract { uncommitted, commits, since_commit, branch_lifetime, write } => {
-            commands::extract::execute(uncommitted, commits, since_commit, branch_lifetime, write)?;
+        Commands::Extract { uncommitted, commits, since_commit, branch_lifetime, since, write } => {
+            commands::extract::execute(uncommitted, commits, since_commit, branch_lifetime, since, write)?;
         }
         Commands::Record { prompt, files, tool_calls, outcome, tool, model } => {
             commands::record::execute(&prompt, files, tool_calls, &outcome, &tool, model)?;

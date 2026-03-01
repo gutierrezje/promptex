@@ -85,6 +85,12 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
                 .unwrap_or_else(|| until - Duration::hours(24));
             Ok(GitContext { scope_files, since, until, commits: Vec::new() })
         }
+
+        ExtractionScope::SinceTime(since) => {
+            let commits = git::commits_since_time(*since)?;
+            let scope_files = collect_files(&commits);
+            Ok(GitContext { scope_files, since: *since, until, commits })
+        }
     }
 }
 
