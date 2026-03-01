@@ -30,8 +30,9 @@ pub fn execute() -> Result<()> {
     let pid = project_id::get_project_id(&cwd)?;
     let extractor = extractors::detect(&cwd, &pid);
 
-    if is_native(extractor.kind) {
-        eprintln!("✓ Native support: {}", extractor.kind.label());
+    let primary = extractor.primary_kind();
+    if is_native(primary) {
+        eprintln!("✓ Native support: {}", primary.label());
         eprintln!("  Prompts are captured automatically — no setup required.");
         eprintln!("  Run `pmtx extract` when ready to generate PR output.");
     } else {

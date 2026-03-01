@@ -63,16 +63,19 @@ pub fn execute(
         eprintln!("  ✓ {} file(s) in scope", ctx.scope_files.len());
     }
 
-    // ── Step 3: Detect extractor and pull raw entries ─────────────────────────
+    // ── Step 3: Detect extractors and pull raw entries ────────────────────────
     let pid = project_id::get_project_id(&cwd)?;
     let extractor = extractors::detect(&cwd, &pid);
-    eprintln!("\n🔎 Loading journal ({})...", extractor.kind.label());
+    eprintln!("\n🔎 Loading journals ({})...", extractor.primary_kind().label());
 
-    let (source_kind, raw_entries) = extractor.extract_with_source(ctx.since, ctx.until)?;
-    if source_kind != extractor.kind {
-        eprintln!("  ↪ Primary source had no entries; switched to {}.", source_kind.label());
+    let (contributing, raw_entries) = extractor.extract_all(ctx.since, ctx.until)?;
+    for (kind, count) in &contributing {
+        eprintln!("  ✓ {} — {count} entries", kind.label());
     }
-    eprintln!("  ✓ Found {} entries in time range", raw_entries.len());
+    if contributing.is_empty() {
+        eprintln!("  ✓ No entries found");
+    }
+    eprintln!("  ✓ {} total in time range", raw_entries.len());
 
     // ── Step 4: Correlate — filter to scope (Phase 6) ─────────────────────────
     let entries = filter_by_scope(&raw_entries, &ctx);
