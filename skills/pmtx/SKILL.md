@@ -93,10 +93,11 @@ Assign each entry to the most fitting section:
 - **🔧 Solution** — implementing, fixing, changing: writing code, editing files, refactoring, debugging a fix, configuring something
 - **✅ Testing** — verifying, validating: running tests, checking output, confirming a fix works, writing test cases
 
+**Short replies with `assistant_context`**: when an entry's prompt is short (a bare "yes", "go ahead", "looks good"), the `assistant_context` field contains the tail of the preceding assistant turn — the proposal or question that was being approved. Use it to categorize these entries correctly. For example, "yes" with `assistant_context: "Should I refactor the auth module to use JWT?"` is a Solution approval, not noise.
+
 **Noise entries to drop** (in addition to what pmtx already filtered):
-- One-word acknowledgements with no context ("yes", "ok", "sure")
+- Short replies with no `assistant_context` and no meaningful tool calls
 - Prompts that are purely clarifying questions with no implementation output
-- Exact or near-exact duplicates of another entry already in the list
 
 When in doubt, keep the entry. The user can always trim.
 
@@ -150,6 +151,7 @@ Follow the `format_spec` from the JSON response. In detail:
 
 Rules:
 - Use `→` (not `->`) for outcome, files, and commit lines
+- If `assistant_context` is present and its last sentence contains a `?`, add a `→ Re:` line after the blockquote (last sentence, capped at 120 chars): `→ Re: *"Want me to fix pr_format.rs with that approach?"*`. Omit the line if the context tail is a declarative statement — it's a non-sequitur and adds noise.
 - Omit outcome line if `outcome` field is empty
 - Omit files line if `files_touched` is empty
 - Omit commit line if `commit` field is empty or not a hex hash ≥ 7 chars
@@ -158,12 +160,22 @@ Rules:
 - Omit empty category sections entirely
 - Duration format: `< 1m`, `32m`, `1h 46m`, `2h`
 
-### After rendering — offer next actions
+### After rendering — write to file
 
-- **Write to file**: `pmtx extract [flags] --write` → creates `PROMPTS.md`
-- **Write to specific file**: `pmtx extract [flags] --write path/to/file.md`
-- **Add to open PR**: `gh pr edit --body "$(pmtx extract [flags])"` *(confirm first — overwrites PR body)*
-- **Nothing**: markdown was already shown, done
+Run `pmtx extract [scope-flags] --write` to save the markdown to `~/.promptex/projects/{id}/PROMPTS.md`. pmtx will print the path and automatically open the file in the system default editor. Tell the user to select all, copy, and paste into their GitHub PR description.
+
+If `--write` is not used (agent rendered in chat), write the file yourself and open it:
+```bash
+# write
+# then open (cross-platform):
+open ~/.promptex/projects/{id}/PROMPTS.md        # macOS
+xdg-open ~/.promptex/projects/{id}/PROMPTS.md   # Linux
+start ~/.promptex/projects/{id}/PROMPTS.md       # Windows
+```
+
+Other options if the user asks:
+- **Specific path**: `pmtx extract [flags] --write path/to/file.md`
+- **Add to open PR directly**: `gh pr edit --body "$(pmtx extract [flags])"` *(confirm first — overwrites PR body)*
 
 ### Flag reference
 
@@ -175,4 +187,4 @@ Rules:
 | `--since-commit HASH` | Since a specific commit (exclusive) |
 | `--branch-lifetime` | Full feature branch since diverge point |
 | `--uncommitted` | Uncommitted changes only |
-| `--write [FILE]` | Write to `PROMPTS.md` or a named file (incompatible with `--json`) |
+| `--write [FILE]` | Write to `~/.promptex/projects/{id}/PROMPTS.md` or a named file (incompatible with `--json`) |

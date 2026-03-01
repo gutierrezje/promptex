@@ -51,7 +51,7 @@ pmtx extract --commits <N>          # Last N commits
 pmtx extract --since-commit <HASH>  # Since a specific commit
 pmtx extract --uncommitted          # Uncommitted changes only
 pmtx extract --branch-lifetime      # Full branch history since diverge point
-pmtx extract --write                # Write to PROMPTS.md instead of stdout
+pmtx extract --write                # Write to ~/.promptex/projects/{id}/PROMPTS.md (prints path)
 pmtx extract --write <FILE>         # Write to a specific file
 pmtx extract --json                 # Output structured JSON for agent-side categorization
 ```
@@ -98,6 +98,12 @@ pmtx check                   # Check if your AI tool is natively supported (exit
 cargo build
 cargo test
 ./target/debug/pmtx --help
+```
+
+After cloning, activate the pre-commit hook (keeps `.claude/skills/` in sync with `skills/`):
+
+```bash
+git config core.hooksPath .githooks
 ```
 
 ## Status
