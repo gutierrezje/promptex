@@ -33,6 +33,13 @@ pub struct JournalEntry {
     /// Model identifier if known (e.g., "claude-sonnet-4.5")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+
+    /// For short replies (< 8 words): the preceding assistant turn that prompted
+    /// this response. Gives the LLM categorizer enough context to interpret
+    /// bare confirmations like "yes" or "go ahead".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub assistant_context: Option<String>,
 }
 
 impl JournalEntry {
@@ -57,6 +64,7 @@ impl JournalEntry {
             outcome,
             tool,
             model,
+            assistant_context: None,
         }
     }
 

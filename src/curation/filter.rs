@@ -41,6 +41,11 @@ pub fn remove_duplicates(mut entries: Vec<JournalEntry>) -> Vec<JournalEntry> {
 
     for candidate in entries {
         let dup_pos = kept.iter().position(|existing| {
+            if candidate.prompt.split_whitespace().count() < MIN_WORDS_FOR_JACCARD
+                || existing.prompt.split_whitespace().count() < MIN_WORDS_FOR_JACCARD
+            {
+                return false;
+            }
             jaccard_similarity(&candidate.prompt, &existing.prompt) > DEDUP_THRESHOLD
         });
 
@@ -58,6 +63,10 @@ pub fn remove_duplicates(mut entries: Vec<JournalEntry>) -> Vec<JournalEntry> {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const DEDUP_THRESHOLD: f64 = 0.80;
+/// Prompts below this word count are never treated as near-duplicates of each
+/// other. Short confirmations like "yes" or "go ahead" are distinct events —
+/// their meaning comes from what the agent did *after* them, not their text.
+const MIN_WORDS_FOR_JACCARD: usize = 8;
 
 /// Jaccard similarity between the word-token sets of two strings.
 ///
@@ -103,6 +112,7 @@ mod tests {
             outcome: String::new(),
             tool: "claude-code".to_string(),
             model: None,
+            assistant_context: None,
         }
     }
 
@@ -154,9 +164,10 @@ mod tests {
 
     #[test]
     fn test_dedup_collapses_identical_prompts() {
+        // Both prompts >= MIN_WORDS_FOR_JACCARD so dedup applies.
         let entries = vec![
-            entry_at("implement jwt validation", 0, &["Edit"], &[]),
-            entry_at("implement jwt validation", 1, &["Edit"], &[]),
+            entry_at("implement jwt validation in the auth middleware module", 0, &["Edit"], &[]),
+            entry_at("implement jwt validation in the auth middleware module", 1, &["Edit"], &[]),
         ];
         let result = remove_duplicates(entries);
         assert_eq!(result.len(), 1);
@@ -178,30 +189,24 @@ mod tests {
 
     #[test]
     fn test_dedup_high_similarity_collapses() {
-        // One extra filler word — should be treated as near-duplicate.
-        // "implement jwt validation" vs "implement jwt validation please"
-        // tokens_a=3, tokens_b=4, intersection=3, union=4, sim=0.75 — just under threshold.
-        // Add one more overlap word to push over 0.80.
-        // "implement the jwt validation" vs "implement the jwt validation now"
-        // tokens_a={"implement","the","jwt","validation"}, tokens_b same + "now"
-        // intersection=4, union=5, sim=0.8 → exactly at threshold (not strictly >)
-        // "implement the jwt validation here" vs "implement the jwt validation here now"
-        // tokens_a=5, tokens_b=6, intersection=5, union=6, sim=0.833 → duplicate
+        // Both prompts >= MIN_WORDS_FOR_JACCARD, one extra word pushes similarity > 0.80.
+        // tokens_a={"implement","the","jwt","expiry","validation","in","auth","module"}  (8)
+        // tokens_b=same + "please" (9)
+        // intersection=8, union=9, sim=0.889 → duplicate; newer wins.
         let entries = vec![
-            entry_at("implement the jwt validation here", 0, &["Edit"], &[]),
-            entry_at("implement the jwt validation here now", 1, &["Edit"], &[]),
+            entry_at("implement the jwt expiry validation in auth module", 0, &["Edit"], &[]),
+            entry_at("implement the jwt expiry validation in auth module please", 1, &["Edit"], &[]),
         ];
         let result = remove_duplicates(entries);
         assert_eq!(result.len(), 1);
-        // The newer (t=1) should win
-        assert!(result[0].prompt.contains("now"));
+        assert!(result[0].prompt.contains("please"));
     }
 
     #[test]
     fn test_dedup_case_insensitive() {
         let entries = vec![
-            entry_at("Implement JWT Validation", 0, &["Edit"], &[]),
-            entry_at("implement jwt validation", 1, &["Edit"], &[]),
+            entry_at("Implement JWT Expiry Validation In The Auth Module", 0, &["Edit"], &[]),
+            entry_at("implement jwt expiry validation in the auth module", 1, &["Edit"], &[]),
         ];
         let result = remove_duplicates(entries);
         assert_eq!(result.len(), 1);
@@ -213,14 +218,25 @@ mod tests {
         assert!(result.is_empty());
     }
 
+    #[test]
+    fn test_dedup_preserves_short_prompts() {
+        // Short prompts (< MIN_WORDS_FOR_JACCARD) are never collapsed — "yes" twice
+        // means two distinct approval moments, each with their own tool calls.
+        let entries = vec![
+            entry_at("yes", 0, &["Edit"], &["src/auth.rs"]),
+            entry_at("yes", 1, &["Edit"], &["src/lib.rs"]),
+        ];
+        let result = remove_duplicates(entries);
+        assert_eq!(result.len(), 2);
+    }
+
     // ── jaccard_similarity (via dedup behaviour) ──────────────────────────
 
     #[test]
     fn test_jaccard_identical_strings() {
-        // Simulate via dedup
         let entries = vec![
-            entry_at("exact same prompt text", 0, &["Edit"], &[]),
-            entry_at("exact same prompt text", 1, &["Edit"], &[]),
+            entry_at("implement the exact same prompt text in auth module", 0, &["Edit"], &[]),
+            entry_at("implement the exact same prompt text in auth module", 1, &["Edit"], &[]),
         ];
         assert_eq!(remove_duplicates(entries).len(), 1);
     }

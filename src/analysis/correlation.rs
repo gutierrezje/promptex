@@ -159,6 +159,7 @@ mod tests {
             outcome: "done".to_string(),
             tool: "claude-code".to_string(),
             model: None,
+            assistant_context: None,
         }
     }
 

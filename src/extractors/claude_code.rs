@@ -80,6 +80,11 @@ impl PromptExtractor for ClaudeCodeExtractor {
     }
 }
 
+/// Prompts shorter than this are eligible for `assistant_context` capture.
+const SHORT_PROMPT_WORD_THRESHOLD: usize = 8;
+/// Max characters to store from the preceding assistant turn.
+const MAX_CONTEXT_CHARS: usize = 300;
+
 // ── Session parsing ───────────────────────────────────────────────────────────
 
 /// A raw message line from a Claude Code JSONL session file.
@@ -139,16 +144,21 @@ fn extract_from_session(
                         let (tool_calls, files_touched) =
                             collect_assistant_context(&raw_messages, i + 1);
 
-                        let entry = JournalEntry::new(
+                        let mut entry = JournalEntry::new(
                             branch,
                             String::new(), // commit hash not in logs; filled by correlation
-                            prompt_text,
+                            prompt_text.clone(),
                             files_touched,
                             tool_calls,
                             String::new(), // outcome inferred during curation
                             "claude-code".to_string(),
                             None,
                         );
+                        // Capture preceding assistant question for short replies
+                        if prompt_text.split_whitespace().count() < SHORT_PROMPT_WORD_THRESHOLD {
+                            entry.assistant_context =
+                                extract_preceding_question(&raw_messages, i);
+                        }
                         // Override timestamp with the actual log timestamp
                         entries.push(with_timestamp(entry, ts));
                     }
@@ -193,6 +203,55 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// Extract plain text blocks from an assistant message.
+fn extract_assistant_text(msg: &RawMessage) -> Option<String> {
+    let content = msg.message.as_ref()?.content.as_ref()?;
+    if let Value::Array(parts) = content {
+        let text: String = parts
+            .iter()
+            .filter_map(|p| {
+                if p.get("type")?.as_str()? == "text" {
+                    p.get("text")?.as_str().map(str::trim).map(String::from)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !text.is_empty() { Some(text) } else { None }
+    } else {
+        None
+    }
+}
+
+/// Return the tail of the most recent assistant turn before `before_idx`.
+///
+/// Walking backward stops at the previous user message so we don't pull in
+/// context from an unrelated earlier exchange.
+fn extract_preceding_question(messages: &[RawMessage], before_idx: usize) -> Option<String> {
+    for msg in messages[..before_idx].iter().rev() {
+        if msg.msg_type == "user" {
+            break;
+        }
+        if msg.msg_type == "assistant" {
+            if let Some(text) = extract_assistant_text(msg) {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    // Take the tail — proposals and questions tend to be at the end.
+                    let count = trimmed.chars().count();
+                    let tail: String = if count <= MAX_CONTEXT_CHARS {
+                        trimmed.to_string()
+                    } else {
+                        trimmed.chars().skip(count - MAX_CONTEXT_CHARS).collect()
+                    };
+                    return Some(tail);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Walk forward from `start` collecting tool names and file paths until the

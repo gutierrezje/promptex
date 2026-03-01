@@ -144,6 +144,7 @@ mod tests {
             outcome: String::new(),
             tool: "claude-code".to_string(),
             model: None,
+            assistant_context: None,
         }
     }
 
