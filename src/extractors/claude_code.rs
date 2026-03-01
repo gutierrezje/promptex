@@ -36,12 +36,11 @@ impl ClaudeCodeExtractor {
         let home = home_dir()?;
         let claude_projects = home.join(".claude").join("projects");
 
-        // Claude Code slugifies the path: replaces '/' with '-', strips leading '-'
+        // Claude Code slugifies the path: replaces '/' with '-'
+        // The leading '-' is intentional and part of the slug (e.g. -Users-alice-myproject)
         let slug = project_root
             .to_string_lossy()
-            .replace('/', "-")
-            .trim_start_matches('-')
-            .to_string();
+            .replace('/', "-");
 
         let candidate = claude_projects.join(&slug);
         if candidate.exists() {
