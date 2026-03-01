@@ -1,8 +1,8 @@
 #!/bin/sh
-# skills/pmtx/SKILL.md is the canonical source of truth.
+# .agents/skills/pmtx/SKILL.md is the canonical source of truth.
 # Mirror it to .claude/skills/pmtx/SKILL.md before every commit.
 
-CANONICAL="skills/pmtx/SKILL.md"
+CANONICAL=".agents/skills/pmtx/SKILL.md"
 MIRROR=".claude/skills/pmtx/SKILL.md"
 
 if [ -f "$CANONICAL" ]; then

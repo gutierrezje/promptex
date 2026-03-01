@@ -1,0 +1,7 @@
+interface:
+  display_name: "PromptEx"
+  short_description: "Extract AI prompt history for pull requests"
+  brand_color: "#F97316"
+
+policy:
+  allow_implicit_invocation: true
