@@ -6,6 +6,7 @@ mod commands;
 mod curation;
 mod extractors;
 mod journal;
+mod output;
 mod project_id;
 
 #[derive(Parser)]

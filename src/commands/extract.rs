@@ -7,6 +7,7 @@ use crate::analysis::scope::{determine_scope, ExtractionScope, ScopeFlags};
 use crate::curation::categorize::{categorize, Intent};
 use crate::curation::filter::{apply_artifact_filter, remove_duplicates};
 use crate::extractors;
+use crate::output::pr_format;
 use crate::project_id;
 
 pub fn execute(
@@ -14,7 +15,7 @@ pub fn execute(
     commits: Option<usize>,
     since_commit: Option<String>,
     branch_lifetime: bool,
-    _write: Option<Option<String>>,
+    write_to: Option<Option<String>>,
 ) -> Result<()> {
     let cwd = env::current_dir()?;
 
@@ -92,24 +93,20 @@ pub fn execute(
     eprintln!("  Solution: {} prompts", solutions.len());
     eprintln!("  Testing: {} prompts", tests.len());
 
-    // ── TODO Phase 8: format and output ──────────────────────────────────────
-    // Temporary grouped preview until output formatting is implemented.
-    for (label, group) in [
-        (format!("{} Investigation", Intent::Investigation.emoji()), &investigations),
-        (format!("{} Solution", Intent::Solution.emoji()), &solutions),
-        (format!("{} Testing", Intent::Testing.emoji()), &tests),
-    ] {
-        if group.is_empty() {
-            continue;
+    // ── Step 7: Render and output (Phase 8) ──────────────────────────────────
+    let markdown = pr_format::render(&investigations, &solutions, &tests, &ctx, &scope);
+
+    match write_to {
+        Some(Some(path)) => {
+            std::fs::write(&path, &markdown)?;
+            eprintln!("\n✓ Written to {path}");
         }
-        println!("\n### {label}");
-        for e in group {
-            println!(
-                "[{}] ({}) {}",
-                e.timestamp.format("%H:%M"),
-                e.tool,
-                e.prompt,
-            );
+        Some(None) => {
+            std::fs::write("PROMPTS.md", &markdown)?;
+            eprintln!("\n✓ Written to PROMPTS.md");
+        }
+        None => {
+            println!("{markdown}");
         }
     }
 
