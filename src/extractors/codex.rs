@@ -1,15 +1,19 @@
-//! Extractor for OpenAI Codex CLI session logs.
+//! Extractor for OpenAI Codex CLI and desktop app session logs.
 //!
-//! Codex stores session rollouts at:
+//! Both the CLI and the Codex desktop app (released Jan 2026) share the same
+//! `RolloutRecorder` from `codex-core` and write to the same path:
 //!   ~/.codex/sessions/YYYY/MM/DD/rollout-{timestamp}-{uuid}.jsonl
 //!
-//! Each line is a JSON event. User prompts appear as messages with
-//! role "user", assistant responses as role "assistant" with tool calls.
+//! File structure (JSONL, adjacent-tagged `RolloutItem` enum):
+//!   Line 0: `{"type": "session_meta", "payload": { id, timestamp, cwd, model_provider, ... }}`
+//!   Line 1+: `{"type": "event_msg", "payload": { "type": "<variant>", ... }}`
+//!
+//! Unlike Claude Code and OpenCode, timestamps are session-level only (line 0).
+//! All entries from a session share the session start timestamp.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use dirs::home_dir;
-use serde::Deserialize;
 use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
@@ -28,7 +32,7 @@ impl CodexExtractor {
     }
 
     pub fn default_sessions_dir() -> Option<PathBuf> {
-        // Respects CODEX_HOME env var override
+        // Respects CODEX_HOME env var override (same as the CLI itself)
         let base = if let Ok(home) = std::env::var("CODEX_HOME") {
             PathBuf::from(home)
         } else {
@@ -39,13 +43,6 @@ impl CodexExtractor {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct CodexEvent {
-    #[serde(rename = "type")]
-    event_type: Option<String>,
-    payload: Option<Value>,
-}
-
 impl PromptExtractor for CodexExtractor {
     fn is_available(_project_root: &Path) -> bool {
         Self::default_sessions_dir().is_some()
@@ -54,12 +51,8 @@ impl PromptExtractor for CodexExtractor {
     fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<JournalEntry>> {
         let mut entries = Vec::new();
 
-        // Collect all rollout-*.jsonl files recursively under sessions/
-        let session_files = collect_jsonl_files(&self.sessions_dir);
-
-        for file in session_files {
-            let mut file_entries =
-                extract_from_rollout(&file, since, until).unwrap_or_default();
+        for file in collect_jsonl_files(&self.sessions_dir) {
+            let mut file_entries = extract_from_rollout(&file, since, until).unwrap_or_default();
             entries.append(&mut file_entries);
         }
 
@@ -67,6 +60,8 @@ impl PromptExtractor for CodexExtractor {
         Ok(entries)
     }
 }
+
+// ── File collection ────────────────────────────────────────────────────────────
 
 fn collect_jsonl_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
@@ -85,6 +80,8 @@ fn collect_jsonl_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+// ── Session extraction ─────────────────────────────────────────────────────────
+
 fn extract_from_rollout(
     path: &Path,
     since: DateTime<Utc>,
@@ -93,42 +90,52 @@ fn extract_from_rollout(
     let file = File::open(path).context("Failed to open Codex session file")?;
     let reader = BufReader::new(file);
 
-    let mut events: Vec<Value> = Vec::new();
+    let mut lines: Vec<Value> = Vec::new();
     for line in reader.lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
         if let Ok(v) = serde_json::from_str::<Value>(&line) {
-            events.push(v);
+            lines.push(v);
         }
     }
 
+    if lines.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Line 0 is always session_meta — session-level timestamp and model.
+    let session_ts = match parse_session_timestamp(&lines[0], path) {
+        Some(ts) => ts,
+        None => return Ok(Vec::new()),
+    };
+
+    if session_ts < since || session_ts > until {
+        return Ok(Vec::new());
+    }
+
+    let model = extract_session_model(&lines[0]);
+
+    // Walk subsequent lines, grouping events into turns by user_message boundaries.
     let mut entries = Vec::new();
-    let mut i = 0;
+    let mut i = 1;
 
-    while i < events.len() {
-        let event = &events[i];
+    while i < lines.len() {
+        if let Some(prompt) = extract_user_message(&lines[i]) {
+            let (tool_calls, files_touched) = collect_turn_tools(&lines, i + 1);
 
-        // Codex user messages: type = "message", payload.role = "user"
-        if let Some(text) = extract_user_prompt(event) {
-            if let Some(ts) = extract_timestamp(event) {
-                if ts >= since && ts <= until {
-                    let (tool_calls, files_touched) = collect_tools(&events, i + 1);
-
-                    let entry = JournalEntry::new(
-                        "unknown".to_string(), // Codex doesn't embed git branch
-                        String::new(),
-                        text,
-                        files_touched,
-                        tool_calls,
-                        String::new(),
-                        "codex".to_string(),
-                        extract_model(event).unwrap_or_default().into(),
-                    );
-                    entries.push(with_timestamp(entry, ts));
-                }
-            }
+            let entry = JournalEntry::new(
+                "unknown".to_string(), // Codex sessions don't embed the git branch
+                String::new(),
+                prompt,
+                files_touched,
+                tool_calls,
+                String::new(),
+                "codex".to_string(),
+                model.clone(),
+            );
+            entries.push(with_timestamp(entry, session_ts));
         }
 
         i += 1;
@@ -137,10 +144,59 @@ fn extract_from_rollout(
     Ok(entries)
 }
 
-fn extract_user_prompt(event: &Value) -> Option<String> {
-    // Format: { type: "message", payload: { role: "user", content: "..." } }
+// ── SessionMeta parsing ────────────────────────────────────────────────────────
+
+/// Parse the session timestamp from the `session_meta` payload, falling back to
+/// the filename when the field is absent.
+///
+/// Filename format: `rollout-2026-02-03T13-40-28-{uuid}.jsonl`
+/// Colons in the time portion are encoded as dashes to stay filesystem-safe.
+fn parse_session_timestamp(meta: &Value, path: &Path) -> Option<DateTime<Utc>> {
+    // Primary: session_meta payload.timestamp (RFC-3339 string)
+    if let Some(ts) = meta
+        .get("payload")
+        .and_then(|p| p.get("timestamp"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+    {
+        return Some(ts);
+    }
+
+    // Fallback: parse from filename stem
+    // "rollout-2026-02-03T13-40-28-019c24ce-590a-7e42-b2e3-efe508ee3731"
+    let stem = path.file_stem()?.to_str()?;
+    let rest = stem.strip_prefix("rollout-")?;
+
+    if rest.len() < 19 {
+        return None;
+    }
+
+    let date = &rest[..10];   // "2026-02-03"
+    let time = &rest[11..19]; // "13-40-28" (dashes instead of colons)
+    let ts_str = format!("{}T{}Z", date, time.replace('-', ":"));
+
+    DateTime::parse_from_rfc3339(&ts_str)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn extract_session_model(meta: &Value) -> Option<String> {
+    meta.get("payload")
+        .and_then(|p| p.get("model_provider"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
+// ── Event parsing ──────────────────────────────────────────────────────────────
+
+/// Extract the prompt text from a `user_message` event_msg line.
+fn extract_user_message(event: &Value) -> Option<String> {
+    if event.get("type")?.as_str()? != "event_msg" {
+        return None;
+    }
     let payload = event.get("payload")?;
-    if payload.get("role")?.as_str()? != "user" {
+    if payload.get("type")?.as_str()? != "user_message" {
         return None;
     }
     let content = payload.get("content")?;
@@ -167,64 +223,67 @@ fn extract_user_prompt(event: &Value) -> Option<String> {
     }
 }
 
-fn extract_timestamp(event: &Value) -> Option<DateTime<Utc>> {
-    event
-        .get("timestamp")
-        .or_else(|| event.get("payload").and_then(|p| p.get("timestamp")))
-        .and_then(|v| v.as_str())
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
-fn extract_model(event: &Value) -> Option<String> {
-    event
-        .get("payload")
-        .and_then(|p| p.get("model"))
-        .and_then(|v| v.as_str())
-        .map(String::from)
-}
-
-fn collect_tools(events: &[Value], start: usize) -> (Vec<String>, Vec<String>) {
-    let mut tool_calls = Vec::new();
-    let mut files_touched = Vec::new();
+/// Collect tool call names and touched files for the turn following a user message.
+/// Stops at the next `user_message` event.
+fn collect_turn_tools(events: &[Value], start: usize) -> (Vec<String>, Vec<String>) {
+    let mut tool_calls: Vec<String> = Vec::new();
+    let mut files_touched: Vec<String> = Vec::new();
 
     for event in &events[start..] {
-        let payload = match event.get("payload") {
-            Some(p) => p,
-            None => continue,
-        };
-
-        // Stop at the next user message
-        if payload.get("role").and_then(|v| v.as_str()) == Some("user") {
+        if extract_user_message(event).is_some() {
             break;
         }
 
-        // Tool call events
-        if let Some(tool_name) = event
-            .get("type")
-            .and_then(|t| if t == "tool_call" { Some(t) } else { None })
-            .and_then(|_| payload.get("name"))
-            .and_then(|v| v.as_str())
-        {
-            let t = tool_name.to_string();
-            if !tool_calls.contains(&t) {
-                tool_calls.push(t);
-            }
+        if event.get("type").and_then(|v| v.as_str()) != Some("event_msg") {
+            continue;
+        }
 
-            if let Some(file) = payload
-                .get("arguments")
-                .and_then(|a| a.get("path").or_else(|| a.get("file_path")))
-                .and_then(|v| v.as_str())
-            {
-                let f = file.to_string();
-                if !files_touched.contains(&f) {
-                    files_touched.push(f);
+        let Some(payload) = event.get("payload") else { continue };
+        let Some(event_type) = payload.get("type").and_then(|v| v.as_str()) else { continue };
+
+        match event_type {
+            "exec_command_begin" => {
+                push_unique(&mut tool_calls, "Bash");
+                // File paths in command args are too noisy to extract reliably
+            }
+            "mcp_tool_call_begin" => {
+                if let Some(name) = payload.get("name").and_then(|v| v.as_str()) {
+                    push_unique(&mut tool_calls, &normalize_tool_name(name));
+                }
+                if let Some(file) = payload
+                    .get("arguments")
+                    .and_then(|a| a.get("path").or_else(|| a.get("file_path")))
+                    .and_then(|v| v.as_str())
+                {
+                    push_unique(&mut files_touched, file);
                 }
             }
+            "apply_patch_approval_request" => {
+                push_unique(&mut tool_calls, "Patch");
+                // Extracting files from raw diff text is out of scope here
+            }
+            _ => {}
         }
     }
 
     (tool_calls, files_touched)
+}
+
+fn normalize_tool_name(name: &str) -> String {
+    match name {
+        "edit" | "write_file" | "create_file" => "Edit",
+        "read" | "read_file" | "view" => "Read",
+        "bash" | "shell" => "Bash",
+        other => other,
+    }
+    .to_string()
+}
+
+fn push_unique(vec: &mut Vec<String>, item: &str) {
+    let s = item.to_string();
+    if !vec.contains(&s) {
+        vec.push(s);
+    }
 }
 
 fn with_timestamp(mut entry: JournalEntry, ts: DateTime<Utc>) -> JournalEntry {
@@ -232,19 +291,109 @@ fn with_timestamp(mut entry: JournalEntry, ts: DateTime<Utc>) -> JournalEntry {
     entry
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+    use std::io::Write;
 
     #[test]
     fn test_collect_jsonl_files_empty_dir() {
         let dir = tempfile::TempDir::new().unwrap();
-        let files = collect_jsonl_files(dir.path());
-        assert!(files.is_empty());
+        assert!(collect_jsonl_files(dir.path()).is_empty());
     }
 
     #[test]
     fn test_is_available_checks_directory() {
         let _ = CodexExtractor::is_available(Path::new("/tmp"));
+    }
+
+    #[test]
+    fn test_parse_timestamp_from_payload() {
+        let meta = serde_json::json!({
+            "type": "session_meta",
+            "payload": {"timestamp": "2026-02-03T13:40:28Z"}
+        });
+        let ts = parse_session_timestamp(&meta, Path::new("irrelevant.jsonl")).unwrap();
+        assert_eq!(ts.format("%Y-%m-%d %H:%M:%S").to_string(), "2026-02-03 13:40:28");
+    }
+
+    #[test]
+    fn test_parse_timestamp_from_filename_fallback() {
+        let meta = serde_json::json!({"type": "session_meta", "payload": {}});
+        let path = Path::new("rollout-2026-02-03T13-40-28-019c24ce.jsonl");
+        let ts = parse_session_timestamp(&meta, path).unwrap();
+        assert_eq!(ts.format("%Y-%m-%d %H:%M:%S").to_string(), "2026-02-03 13:40:28");
+    }
+
+    #[test]
+    fn test_extract_user_message_correct_format() {
+        let event = serde_json::json!({
+            "type": "event_msg",
+            "payload": {"type": "user_message", "content": "fix the auth bug"}
+        });
+        assert_eq!(extract_user_message(&event), Some("fix the auth bug".to_string()));
+    }
+
+    #[test]
+    fn test_extract_user_message_rejects_old_role_format() {
+        let event = serde_json::json!({
+            "type": "message",
+            "payload": {"role": "user", "content": "old format"}
+        });
+        assert_eq!(extract_user_message(&event), None);
+    }
+
+    #[test]
+    fn test_normalize_tool_name() {
+        assert_eq!(normalize_tool_name("edit"), "Edit");
+        assert_eq!(normalize_tool_name("read_file"), "Read");
+        assert_eq!(normalize_tool_name("bash"), "Bash");
+        assert_eq!(normalize_tool_name("my_custom_tool"), "my_custom_tool");
+    }
+
+    #[test]
+    fn test_full_rollout_extraction() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("rollout-2026-01-15T10-00-00-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-01-15T10:00:00Z","cwd":"/proj","originator":"Codex Desktop","source":"appServer","cli_version":"1.0","model_provider":"openai/codex-mini"}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"add auth validation"}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"mcp_tool_call_begin","name":"edit","arguments":{{"path":"src/auth.rs"}}}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"turn_complete"}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"run tests"}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"exec_command_begin","command":["cargo","test"]}}}}"#).unwrap();
+
+        let since = Utc.with_ymd_and_hms(2026, 1, 15, 9, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 1, 15, 11, 0, 0).unwrap();
+        let entries = extract_from_rollout(&path, since, until).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].prompt, "add auth validation");
+        assert_eq!(entries[0].tool_calls, vec!["Edit"]);
+        assert_eq!(entries[0].files_touched, vec!["src/auth.rs"]);
+        assert_eq!(entries[0].tool, "codex");
+        assert_eq!(entries[0].model, Some("openai/codex-mini".to_string()));
+        assert_eq!(entries[1].prompt, "run tests");
+        assert_eq!(entries[1].tool_calls, vec!["Bash"]);
+    }
+
+    #[test]
+    fn test_session_outside_time_range_skipped() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("rollout-2026-01-15T10-00-00-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-01-15T10:00:00Z","cwd":"/proj","originator":"cli","source":"cli","cli_version":"1.0"}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"some prompt"}}}}"#).unwrap();
+
+        let since = Utc.with_ymd_and_hms(2026, 1, 16, 0, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 1, 17, 0, 0, 0).unwrap();
+        let entries = extract_from_rollout(&path, since, until).unwrap();
+
+        assert!(entries.is_empty());
     }
 }

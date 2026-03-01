@@ -1,12 +1,21 @@
 //! Extractor detection and dispatch.
 //!
 //! `detect()` inspects the current environment and returns the best available
-//! extractor. Priority: Claude Code → OpenCode → Codex → manual fallback.
+//! extractor. Priority: Claude Code → Codex → manual fallback.
+//!
+//! ## Extractor support status
+//! | Tool           | Status  | Notes                                           |
+//! |----------------|---------|------------------------------------------------ |
+//! | Claude Code    | ✅ Active | JSONL sessions at `~/.claude/projects/`        |
+//! | Codex CLI/App  | ✅ Active | JSONL sessions at `~/.codex/sessions/`         |
+//! | OpenCode       | ⏳ TODO  | Migrated to SQLite (v1.2+); needs rewrite       |
+//! | Cursor         | ⏳ TODO  | Log format TBD                                  |
+//! | GitHub Copilot | ⏳ TODO  | Log format TBD                                  |
 
 pub mod claude_code;
 pub mod codex;
 pub mod manual;
-pub mod opencode;
+pub mod opencode; // kept for future rewrite — not wired into detect()
 pub mod traits;
 
 use anyhow::Result;
@@ -19,14 +28,12 @@ use crate::project_id;
 use claude_code::ClaudeCodeExtractor;
 use codex::CodexExtractor;
 use manual::ManualExtractor;
-use opencode::OpenCodeExtractor;
 use traits::PromptExtractor;
 
 /// Which extractor was selected and is in use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtractorKind {
     ClaudeCode,
-    OpenCode,
     Codex,
     Manual,
 }
@@ -35,8 +42,7 @@ impl ExtractorKind {
     pub fn label(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "Claude Code",
-            Self::OpenCode => "OpenCode",
-            Self::Codex => "Codex CLI",
+            Self::Codex => "Codex CLI / Desktop",
             Self::Manual => "manual (pmtx record)",
         }
     }
@@ -69,18 +75,7 @@ pub fn detect(project_root: &Path, project_id: &str) -> ActiveExtractor {
         }
     }
 
-    // 2. OpenCode
-    if OpenCodeExtractor::is_available(project_root) {
-        if let Some(msg_dir) = OpenCodeExtractor::default_message_dir() {
-            let ex = OpenCodeExtractor::new(msg_dir);
-            return ActiveExtractor {
-                kind: ExtractorKind::OpenCode,
-                extractor: Box::new(move |since, until| ex.extract(since, until)),
-            };
-        }
-    }
-
-    // 3. Codex CLI
+    // 2. Codex CLI / Desktop app (same log format, same ~/.codex/sessions/ path)
     if CodexExtractor::is_available(project_root) {
         if let Some(sessions_dir) = CodexExtractor::default_sessions_dir() {
             let ex = CodexExtractor::new(sessions_dir);
@@ -91,7 +86,7 @@ pub fn detect(project_root: &Path, project_id: &str) -> ActiveExtractor {
         }
     }
 
-    // 4. Manual fallback
+    // 3. Manual fallback (pmtx record journal)
     let pid = project_id.to_string();
     ActiveExtractor {
         kind: ExtractorKind::Manual,

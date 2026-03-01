@@ -103,7 +103,7 @@ Project ID determined by:
 ### Output Format
 
 **Default (stdout, PR description format):**
-```markdown
+````markdown
 ## 🤖 Prompt History
 
 <details>
@@ -167,7 +167,7 @@ write a test that verifies expired tokens are rejected
 **Summary:** 6 prompts (3 investigation, 2 solution, 1 testing) across 2 tools
 
 </details>
-```
+````
 
 **With `--write` flag (file output, more detailed):**
 ```markdown
@@ -385,6 +385,20 @@ $ pmtx projects remove <project-id>
 
 ---
 
+## Future Extractor Support
+
+Active extractors: **Claude Code** ✅ and **Codex CLI/Desktop** ✅.
+
+The following are planned but not yet implemented:
+
+| Tool | Blocker / Notes |
+|------|-----------------|
+| **OpenCode** (sst/opencode) | Migrated to SQLite (v1.2+). Needs query against `~/.local/share/opencode/opencode.db`. MessageV2 schema: `MessageTable` + `PartTable` (parts have `type: "tool"` not `"tool-invocation"`). Legacy JSON file extractor exists in `src/extractors/opencode.rs` but is disabled. |
+| **Cursor** | Log format and storage path TBD — needs investigation. |
+| **GitHub Copilot** | Log format and storage path TBD — needs investigation. |
+
+---
+
 ## Tech Stack
 
 ### CLI Tool (Rust)
@@ -440,9 +454,12 @@ promptex/
 │   │   ├── writer.rs       # Append to journal.jsonl
 │   │   └── reader.rs       # Load and filter journal
 │   ├── extractors/
-│   │   ├── mod.rs
+│   │   ├── mod.rs          # detect() — picks extractor based on tool in use
 │   │   ├── traits.rs       # PromptExtractor trait
-│   │   └── claude_code.rs  # Parse Claude Code logs (Phase 3)
+│   │   ├── claude_code.rs  # ~/.claude/projects/{slug}/*.jsonl
+│   │   ├── opencode.rs     # ~/.local/share/opencode/storage/
+│   │   ├── codex.rs        # ~/.codex/sessions/YYYY/MM/DD/*.jsonl
+│   │   └── manual.rs       # fallback: journal.jsonl written by pmtx record
 │   ├── analysis/
 │   │   ├── mod.rs
 │   │   ├── git.rs          # Git operations (status, diff, log, branch info)
@@ -504,7 +521,7 @@ Commands:
 
 ---
 
-### Phase 2: Project ID & Home Directory Storage
+### Phase 2: Project ID & Home Directory Storage ✅
 
 **Goal:** Identify projects and set up home directory storage structure
 
@@ -546,7 +563,7 @@ pub fn load_journal(project_id: &str) -> Result<Vec<JournalEntry>>
 
 ---
 
-### Phase 3: Git Analysis & Smart Scoping (CRITICAL PATH)
+### Phase 3: Git Analysis & Smart Scoping ✅
 
 **Goal:** Determine what to extract based on git state
 
@@ -588,7 +605,7 @@ pub fn determine_smart_scope() -> Result<ExtractionScope> {
 
 ---
 
-### Phase 4: Journaling (Agent Integration Foundation)
+### Phase 4: Journaling (pmtx record + redaction) ✅
 
 **Goal:** Record prompts to journal with redaction
 
@@ -646,9 +663,60 @@ pub fn record_prompt(prompt: &str, context: &Context) -> Result<()> {
 
 ---
 
-### Phase 5: Correlation & Filtering
+### Phase 5: Log Extraction (Primary Data Source) ✅
 
-**Goal:** Match journal prompts to extraction scope
+**Goal:** Read prompts directly from AI tool session logs — zero token overhead,
+no agent cooperation required. `pmtx record` becomes a fallback only.
+Built before correlation because correlation needs extracted entries to filter.
+
+**Log locations (all JSONL):**
+| Tool | Path |
+|------|------|
+| Claude Code | `~/.claude/projects/{slug}/*.jsonl` |
+| OpenCode | `~/.local/share/opencode/storage/message/` |
+| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` |
+| Manual fallback | `~/.promptex/projects/{id}/journal.jsonl` |
+
+**Files:**
+```
+src/extractors/
+├── mod.rs          # detect() — auto-selects extractor from available logs
+├── traits.rs       # PromptExtractor trait
+├── claude_code.rs  # Parse Claude Code JSONL sessions
+├── opencode.rs     # Parse OpenCode message storage
+├── codex.rs        # Parse Codex CLI session rollouts
+└── manual.rs       # Reads pmtx record journal.jsonl (fallback)
+```
+
+**Detection logic (in order):**
+1. Claude Code logs present for this project → `ClaudeCodeExtractor`
+2. OpenCode logs present → `OpenCodeExtractor`
+3. Codex logs present → `CodexExtractor`
+4. None found → `ManualExtractor` (reads `pmtx record` journal)
+
+**`pmtx record` in a log-available context:**
+When logs are detected, `pmtx record` writes a lightweight timestamp-only
+anchor entry. The extractor uses it to narrow the log window rather than
+re-reading the entire session history.
+
+**PromptExtractor trait:**
+```rust
+pub trait PromptExtractor {
+    /// True if this tool's logs exist for the current project.
+    fn is_available(project_root: &Path) -> bool;
+    /// Extract entries within the given time window.
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<JournalEntry>>;
+}
+```
+
+**Deliverable:** `pmtx extract` pulls real prompt data from whichever tool the
+user is running, with no setup or token cost.
+
+---
+
+### Phase 6: Correlation & Filtering
+
+**Goal:** Match extracted entries to the git scope (files, commits, time window)
 
 **Files:**
 ```
@@ -657,39 +725,35 @@ src/analysis/correlation.rs
 
 **Key functions:**
 ```rust
-pub fn filter_journal_by_scope(
-    journal: &[JournalEntry],
+pub fn filter_by_scope(
+    entries: &[JournalEntry],
     scope: &ExtractionScope,
     git_ctx: &GitContext,
 ) -> Vec<JournalEntry> {
-    // 1. Get files in scope (from commits or git status)
-    // 2. Get time range for scope
-    // 3. Filter journal entries that:
-    //    - Touched files in scope
-    //    - Within time range
-    //    - On relevant branch (for context)
+    // 1. Resolve files in scope (from commits or git status)
+    // 2. Resolve time range for scope
+    // 3. Keep entries that touched files in scope OR fall within time range
 }
 
 pub fn has_artifact(entry: &JournalEntry) -> bool {
     // Must have file edits, commands, or meaningful investigation
-    !entry.tool_calls.is_empty() ||
-    !entry.files_touched.is_empty()
+    !entry.tool_calls.is_empty() || !entry.files_touched.is_empty()
 }
 ```
 
-**Deliverable:** Filtered, scoped prompt extraction working
+**Deliverable:** Filtered, scoped prompt list ready for curation
 
 ---
 
-### Phase 6: Curation & Categorization
+### Phase 7: Curation & Categorization
 
-**Goal:** Categorize and enrich filtered prompts
+**Goal:** Categorize and deduplicate the correlated prompts
 
 **Files:**
 ```
 src/curation/
-├── filter.rs       # Remove repetitive/low-value
-└── categorize.rs   # Investigation/Solution/Testing
+├── filter.rs       # Remove repetitive/low-value prompts
+└── categorize.rs   # Investigation / Solution / Testing
 ```
 
 **Categorization:**
@@ -702,9 +766,9 @@ pub enum Intent {
 
 pub fn categorize(entry: &JournalEntry) -> Intent {
     // Heuristics:
-    // - Contains "understand", "explain", "show me" → Investigation
-    // - Contains "implement", "add", "fix", "write" → Solution
-    // - Contains "test", "verify", "check" → Testing
+    // - "understand", "explain", "show me" → Investigation
+    // - "implement", "add", "fix", "write" → Solution
+    // - "test", "verify", "check" → Testing
     // - Tool calls: mostly Read → Investigation
     // - Tool calls: Edit/Write → Solution
     // - Tool calls: Bash (test commands) → Testing
@@ -719,7 +783,7 @@ pub fn remove_duplicates(entries: Vec<JournalEntry>) -> Vec<JournalEntry> {
 
 ---
 
-### Phase 7: Output Generation
+### Phase 8: Output Generation
 
 **Goal:** Generate PR format (stdout) and detailed format (--write)
 
@@ -733,7 +797,6 @@ src/output/
 **PR format (stdout):**
 ```rust
 pub fn generate_pr_format(prompts: &[CuratedPrompt], ctx: &ExtractionContext) -> String {
-    // Outputs:
     // ## 🤖 AI Assistance Transparency
     // <details>
     // <summary>View Prompt History (N prompts)</summary>
@@ -753,36 +816,6 @@ pub fn generate_detailed_format(prompts: &[CuratedPrompt], ctx: &ExtractionConte
 
 ---
 
-### Phase 8: Agent Skill Integration
-
-**Goal:** Make pmtx callable as agent skill for automatic journaling
-
-**Files:**
-```
-skill.json or agent integration docs
-```
-
-**Agent skill definition:**
-```json
-{
-  "name": "pmtx-record",
-  "description": "Journal AI prompt for session history",
-  "trigger": "after_tool_call",
-  "command": "pmtx record --prompt '{prompt}' --files '{files}' --tool-calls '{tools}' --outcome '{outcome}'"
-}
-```
-
-**Agent workflow:**
-1. User asks agent to make changes
-2. Agent invokes tools (Edit, Bash, etc.)
-3. After tool invocation, agent automatically calls `pmtx record`
-4. Entry appended to journal (already redacted)
-5. When user creates PR, agent suggests: `pmtx extract | gh pr create`
-
-**Deliverable:** Documented agent integration, working auto-journaling
-
----
-
 ### Phase 9: Polish & Commands
 
 **Additional commands:**
@@ -790,6 +823,10 @@ skill.json or agent integration docs
 pmtx status      # Show journal stats for current project
 pmtx projects    # List/manage tracked projects
 ```
+
+**Additional `pmtx extract` flags:**
+- `--since <DURATION>` — time-based scope (e.g. `2h`, `1d`, `3d`, `1w`). More ergonomic than `--commits N` for straight-to-main workflows where users think in time rather than commit count. Parses to a `DateTime` cutoff and filters commits by author timestamp.
+- `--interactive` — commit picker UI for selecting exactly which commits to include
 
 **Rich CLI output (indicatif + console):**
 - Progress spinners for extraction

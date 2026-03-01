@@ -1,10 +1,17 @@
 //! Extractor for OpenCode (sst/opencode) session logs.
 //!
-//! OpenCode stores messages under:
-//!   ~/.local/share/opencode/storage/message/
+//! ⚠️  NOT WIRED INTO DETECTION — needs rewrite before use.
 //!
-//! Each file is a JSON object representing one message part with fields:
-//! role, content (array of parts), tool executions, and timestamps.
+//! OpenCode v1.2+ migrated from JSON files to SQLite:
+//!   Old (≤v1.1): JSON files at ~/.local/share/opencode/storage/message/
+//!   New (v1.2+):  SQLite at ~/.local/share/opencode/opencode.db
+//!
+//! This extractor targets the old JSON format and will silently return zero
+//! entries on any current install. A future rewrite should query the SQLite
+//! database directly. The MessageV2 schema (from opencode source):
+//!   - MessageTable: id, session_id, role, model, time, ...
+//!   - PartTable:    message_id, type ("text" | "tool" | "reasoning"), ...
+//!   - ToolPart:     { type: "tool", tool: { toolName, ... }, state, ... }
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
