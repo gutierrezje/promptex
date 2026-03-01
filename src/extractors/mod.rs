@@ -5,9 +5,6 @@
 //! timestamp so cross-tool sessions (e.g. Claude Code + Codex on the same
 //! branch) appear together.
 //!
-//! Manual journal entries (from `pmtx record`) are used only as a fallback
-//! when no native extractor finds entries for the requested window.
-//!
 //! ## Extractor support status
 //! | Tool           | Status  | Notes                                           |
 //! |----------------|---------|------------------------------------------------ |
@@ -19,7 +16,6 @@
 
 pub mod claude_code;
 pub mod codex;
-pub mod manual;
 pub mod opencode; // kept for future rewrite — not wired into detect()
 pub mod traits;
 
@@ -31,7 +27,6 @@ use crate::curation::redact::redact;
 use crate::journal::JournalEntry;
 use claude_code::ClaudeCodeExtractor;
 use codex::CodexExtractor;
-use manual::ManualExtractor;
 use traits::PromptExtractor;
 
 type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<Vec<JournalEntry>>>;
@@ -41,7 +36,6 @@ type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<Vec<JournalE
 pub enum ExtractorKind {
     ClaudeCode,
     Codex,
-    Manual,
 }
 
 impl ExtractorKind {
@@ -49,7 +43,6 @@ impl ExtractorKind {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex CLI / Desktop",
-            Self::Manual => "manual (pmtx record)",
         }
     }
 }
@@ -57,15 +50,13 @@ impl ExtractorKind {
 /// All active extractors, merged at extraction time.
 pub struct ActiveExtractor {
     sources: Vec<(ExtractorKind, ExtractFn)>,
-    manual_fallback: Option<ExtractFn>,
 }
 
 impl ActiveExtractor {
     /// Extract entries from all available sources and merge by timestamp.
     ///
     /// Returns a list of which sources contributed entries (for diagnostics)
-    /// alongside the merged, redacted entries. Falls back to the manual journal
-    /// only when all native sources return zero entries.
+    /// alongside the merged, redacted entries.
     pub fn extract_all(
         &self,
         since: DateTime<Utc>,
@@ -82,24 +73,14 @@ impl ActiveExtractor {
             }
         }
 
-        if all_entries.is_empty() {
-            if let Some(fallback) = &self.manual_fallback {
-                let manual_entries = fallback(since, until)?;
-                if !manual_entries.is_empty() {
-                    contributing.push((ExtractorKind::Manual, manual_entries.len()));
-                    all_entries = manual_entries;
-                }
-            }
-        }
-
         all_entries.sort_by_key(|e| e.timestamp);
 
         Ok((contributing, redact_entries(all_entries)))
     }
 
-    /// Primary source kind — used for initial diagnostic label.
-    pub fn primary_kind(&self) -> ExtractorKind {
-        self.sources.first().map(|(k, _)| *k).unwrap_or(ExtractorKind::Manual)
+    /// Primary source kind — `None` if no supported tool was detected.
+    pub fn primary_kind(&self) -> Option<ExtractorKind> {
+        self.sources.first().map(|(k, _)| *k)
     }
 }
 
@@ -116,11 +97,7 @@ fn redact_entries(entries: Vec<JournalEntry>) -> Vec<JournalEntry> {
 }
 
 /// Detect and return all available extractors for `project_root`.
-///
-/// All native sources (Claude Code, Codex, etc.) that are present on disk are
-/// included. The manual journal is wired as a fallback for when native sources
-/// find nothing.
-pub fn detect(project_root: &Path, project_id: &str) -> ActiveExtractor {
+pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
     let mut sources: Vec<(ExtractorKind, ExtractFn)> = Vec::new();
 
     if ClaudeCodeExtractor::is_available(project_root) {
@@ -143,21 +120,7 @@ pub fn detect(project_root: &Path, project_id: &str) -> ActiveExtractor {
         }
     }
 
-    let pid = project_id.to_string();
-    let manual_fallback: Option<ExtractFn> = Some(Box::new(move |since, until| {
-        ManualExtractor::new(pid.clone()).extract(since, until)
-    }));
-
-    if sources.is_empty() {
-        let pid2 = project_id.to_string();
-        sources.push((
-            ExtractorKind::Manual,
-            Box::new(move |since, until| ManualExtractor::new(pid2.clone()).extract(since, until)),
-        ));
-        return ActiveExtractor { sources, manual_fallback: None };
-    }
-
-    ActiveExtractor { sources, manual_fallback }
+    ActiveExtractor { sources }
 }
 
 #[cfg(test)]
@@ -173,7 +136,7 @@ mod tests {
             vec!["src/lib.rs".to_string()],
             vec!["Edit".to_string()],
             "done".to_string(),
-            "manual".to_string(),
+            "claude-code".to_string(),
             None,
         );
         e.timestamp = Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap();
@@ -193,7 +156,6 @@ mod tests {
                 (ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(vec![sample_entry("from claude")]))),
                 (ExtractorKind::Codex, Box::new(|_, _| Ok(vec![sample_entry("from codex")]))),
             ],
-            manual_fallback: None,
         };
 
         let (contributing, entries) = ex.extract_all(since, until).unwrap();
@@ -204,47 +166,32 @@ mod tests {
     }
 
     #[test]
-    fn extract_all_falls_back_to_manual_when_all_empty() {
-        let (since, until) = window();
-        let ex = ActiveExtractor {
-            sources: vec![
-                (ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(Vec::new()))),
-            ],
-            manual_fallback: Some(Box::new(|_, _| Ok(vec![sample_entry("from manual")]))),
-        };
-
-        let (contributing, entries) = ex.extract_all(since, until).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(contributing[0].0, ExtractorKind::Manual);
-    }
-
-    #[test]
-    fn extract_all_skips_manual_when_native_has_entries() {
-        let (since, until) = window();
-        let ex = ActiveExtractor {
-            sources: vec![
-                (ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(vec![sample_entry("from claude")]))),
-            ],
-            manual_fallback: Some(Box::new(|_, _| Ok(vec![sample_entry("from manual")]))),
-        };
-
-        let (contributing, entries) = ex.extract_all(since, until).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(contributing[0].0, ExtractorKind::ClaudeCode);
-    }
-
-    #[test]
     fn extract_all_returns_empty_when_nothing_found() {
         let (since, until) = window();
         let ex = ActiveExtractor {
             sources: vec![
                 (ExtractorKind::Codex, Box::new(|_, _| Ok(Vec::new()))),
             ],
-            manual_fallback: Some(Box::new(|_, _| Ok(Vec::new()))),
         };
 
         let (contributing, entries) = ex.extract_all(since, until).unwrap();
         assert!(entries.is_empty());
         assert!(contributing.is_empty());
+    }
+
+    #[test]
+    fn primary_kind_returns_none_when_no_sources() {
+        let ex = ActiveExtractor { sources: vec![] };
+        assert_eq!(ex.primary_kind(), None);
+    }
+
+    #[test]
+    fn primary_kind_returns_first_source() {
+        let ex = ActiveExtractor {
+            sources: vec![
+                (ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(vec![]))),
+            ],
+        };
+        assert_eq!(ex.primary_kind(), Some(ExtractorKind::ClaudeCode));
     }
 }

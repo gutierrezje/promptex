@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 
 use crate::commands::status::format_relative;
-use crate::journal;
 use crate::ProjectsAction;
 
 pub fn execute(action: ProjectsAction) -> Result<()> {
@@ -44,9 +44,15 @@ fn load_sorted_projects() -> Result<Vec<ProjectInfo>> {
             continue;
         }
 
-        let last_ts = journal::load_journal(&id)
+        let last_ts = std::fs::read_dir(&path)
             .ok()
-            .and_then(|entries| entries.into_iter().last().map(|e| e.timestamp));
+            .and_then(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("PROMPTS-"))
+                    .filter_map(|e| e.metadata().ok()?.modified().ok())
+                    .max()
+                    .map(DateTime::<Utc>::from)
+            });
         let extractions = std::fs::read_dir(&path)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
@@ -73,7 +79,7 @@ fn list() -> Result<()> {
     let projects = load_sorted_projects()?;
 
     if projects.is_empty() {
-        println!("No projects found. Run pmtx record or pmtx extract in a git repository.");
+        println!("No projects found. Run `pmtx extract` in a git repository to create one.");
         return Ok(());
     }
 

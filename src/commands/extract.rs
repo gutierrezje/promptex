@@ -4,12 +4,9 @@ use anyhow::Result;
 
 use crate::analysis::correlation::{build_git_context, filter_by_scope};
 use crate::analysis::scope::{determine_scope, ExtractionScope, ScopeFlags};
-use crate::curation::categorize::{categorize, Intent};
 use crate::curation::filter::{apply_artifact_filter, remove_duplicates};
 use crate::extractors;
-use crate::output::interactive;
 use crate::output::json_format;
-use crate::output::pr_format;
 use crate::project_id;
 
 pub fn execute(
@@ -18,12 +15,7 @@ pub fn execute(
     since_commit: Option<String>,
     branch_lifetime: bool,
     since_duration: Option<String>,
-    json: bool,
-    write_to: Option<Option<String>>,
 ) -> Result<()> {
-    if json && write_to.is_some() {
-        anyhow::bail!("--json and --write are mutually exclusive");
-    }
     let cwd = env::current_dir()?;
 
     // ── Step 1: Determine scope ───────────────────────────────────────────────
@@ -66,7 +58,8 @@ pub fn execute(
     // ── Step 3: Detect extractors and pull raw entries ────────────────────────
     let pid = project_id::get_project_id(&cwd)?;
     let extractor = extractors::detect(&cwd, &pid);
-    eprintln!("\n🔎 Loading journals ({})...", extractor.primary_kind().label());
+    let kind_label = extractor.primary_kind().map(|k| k.label()).unwrap_or("none");
+    eprintln!("\n🔎 Loading journals ({kind_label})...");
 
     let (contributing, raw_entries) = extractor.extract_all(ctx.since, ctx.until)?;
     for (kind, count) in &contributing {
@@ -91,53 +84,9 @@ pub fn execute(
         return Ok(());
     }
 
-    // ── Step 6 (json path): emit structured JSON for agent categorization ─────
-    if json {
-        let out = json_format::render_json(&entries, &ctx, &scope)?;
-        println!("{out}");
-        return Ok(());
-    }
-
-    // ── Step 6: Categorize (Phase 7) ──────────────────────────────────────────
-    let mut investigations: Vec<_> = Vec::new();
-    let mut solutions: Vec<_> = Vec::new();
-    let mut tests: Vec<_> = Vec::new();
-
-    for e in &entries {
-        match categorize(e) {
-            Intent::Investigation => investigations.push(e),
-            Intent::Solution => solutions.push(e),
-            Intent::Testing => tests.push(e),
-        }
-    }
-
-    eprintln!("\n📝 Curating prompt log...");
-    eprintln!("  Investigation: {} prompts", investigations.len());
-    eprintln!("  Solution: {} prompts", solutions.len());
-    eprintln!("  Testing: {} prompts", tests.len());
-
-    // ── Step 7: Render and output (Phase 8) ──────────────────────────────────
-    let markdown = pr_format::render(&investigations, &solutions, &tests, &ctx, &scope);
-
-    match write_to {
-        Some(Some(path)) => {
-            std::fs::write(&path, &markdown)?;
-            eprintln!("\n✓ Written to {path}");
-        }
-        Some(None) => {
-            let ts = chrono::Utc::now().format("%Y%m%d-%H%M");
-            let path = project_id::get_project_dir(&pid)?.join(format!("PROMPTS-{ts}.md"));
-            std::fs::write(&path, &markdown)?;
-            eprintln!("\n✓ Written to {}", path.display());
-            if let Err(e) = open::that(&path) {
-                eprintln!("  (could not open in editor: {e})");
-            }
-        }
-        None => {
-            println!("{markdown}");
-            interactive::maybe_prompt(&markdown)?;
-        }
-    }
+    // ── Step 6: Emit structured JSON for agent-side categorization ────────────
+    let out = json_format::render_json(&entries, &ctx, &scope)?;
+    println!("{out}");
 
     Ok(())
 }

@@ -1,24 +1,24 @@
 ---
 name: pmtx
-description: Journal and extract AI prompt history for pull requests using PromptEx (pmtx). Use this skill at the START of a coding session to detect whether prompts are captured automatically or must be journaled manually. Use it AGAIN whenever the user asks to generate prompts for a PR, create a prompt history, add AI context to a pull request, share AI reasoning with maintainers, or run pmtx extract. Trigger phrases include: "add my prompts to the PR", "what prompts should I include?", "generate prompt summary", "extract my session", "show my AI reasoning".
+description: Extract AI prompt history for pull requests using PromptEx (pmtx). Use this skill at the START of a coding session to verify your tool is supported. Use it AGAIN whenever the user asks to generate prompts for a PR, create a prompt history, add AI context to a pull request, share AI reasoning with maintainers, or run pmtx extract. Trigger phrases include: "add my prompts to the PR", "what prompts should I include?", "generate prompt summary", "extract my session", "show my AI reasoning".
 ---
 
 # PromptEx — Journal and Extract AI Prompt History
 
-PromptEx (`pmtx`) reads AI tool session logs (or a manual journal), correlates prompts to git changes in scope, and outputs PR-ready markdown.
+PromptEx (`pmtx`) reads AI tool session logs, correlates prompts to git changes in scope, and outputs structured JSON for agent-side rendering.
 
 ---
 
-## On session start — detect recording mode
+## On session start
 
-Run this once at the beginning of a coding session:
+Run once to verify your tool is supported:
 
 ```bash
 pmtx check
 ```
 
-- **Exit 0 — native support**: your AI tool's logs are captured automatically. No journaling needed. Skip to [Extracting](#extracting) when ready.
-- **Exit 1 — no native support**: prompts must be recorded manually after each significant action. Follow [Recording](#recording) below throughout the session.
+- **Exit 0**: your tool's logs are captured automatically. Run `pmtx extract` when ready.
+- **Exit 1**: your tool isn't natively supported yet. pmtx can only extract from supported tools (Claude Code, Codex).
 
 If `pmtx` is not found, tell the user to install it:
 - In the promptex repo: `cargo install --path .`
@@ -26,46 +26,12 @@ If `pmtx` is not found, tell the user to install it:
 
 ---
 
-## Recording
-
-*Only needed when `pmtx check` exits 1 (non-native tool).*
-
-After each significant action — completing a task, writing code, fixing a bug, running tests — call:
-
-```bash
-pmtx record \
-  --prompt "<the user's prompt or your summary of the task>" \
-  --files "<comma-separated list of files touched, e.g. src/main.rs,src/lib.rs>" \
-  --tool-calls "<comma-separated tools used, e.g. Edit,Bash,Read>" \
-  --outcome "<one sentence: what was accomplished>" \
-  --tool "<your tool slug, e.g. opencode, cursor, copilot>" \
-  --model "<model identifier, e.g. gpt-4o, gemini-2.0-flash>"
-```
-
-`--tool` defaults to `claude-code` if omitted. `--model` is optional but recommended for attribution. Omit both if the defaults are correct for your tool.
-
-**What counts as a "significant action":**
-- Writing or editing source code
-- Running tests or build commands
-- Debugging and fixing an error
-- Researching or explaining a design decision
-
-**What to capture:**
-- `--prompt`: the user's original request, or a concise description of the task
-- `--files`: all files that were created, edited, or read as part of this action
-- `--tool-calls`: the tools or capabilities used (Edit, Bash, Read, Search, etc.)
-- `--outcome`: a single sentence describing what was done or decided
-
-Skip trivial actions (status checks, reading unrelated files, clarifying questions with no code output).
-
----
-
 ## Extracting
 
-When the user wants PR-ready output, or at the end of a session, use the `--json` flag so you can categorize entries semantically before rendering:
+When the user wants PR-ready output, or at the end of a session, run:
 
 ```bash
-pmtx extract [scope-flags] --json
+pmtx extract [scope-flags]
 ```
 
 This outputs structured JSON containing the curated entries and a `format_spec`. You then:
@@ -162,11 +128,10 @@ Rules:
 
 ### After rendering — write to file
 
-Run `pmtx extract [scope-flags] --write` to save the markdown to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` and auto-open it. Tell the user to select all, copy, and paste into their GitHub PR description.
+After rendering in chat, write the markdown to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` and open it. Tell the user to select all, copy, and paste into their GitHub PR description.
 
-If `--write` is not used (agent rendered in chat), write the file yourself using a timestamp in the filename, then open it:
+Use `pmtx status` to find the project ID, then write the file and open it:
 ```bash
-# write to e.g. PROMPTS-20260301-1423.md
 # then open (cross-platform):
 open ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md        # macOS
 xdg-open ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md   # Linux
@@ -174,17 +139,14 @@ start ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md       # Windows
 ```
 
 Other options if the user asks:
-- **Specific path**: `pmtx extract [flags] --write path/to/file.md`
-- **Add to open PR directly**: `gh pr edit --body "$(pmtx extract [flags])"` *(confirm first — overwrites PR body)*
+- **Add to open PR directly**: `gh pr edit --body-file ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` *(confirm first — overwrites PR body)*
 
 ### Flag reference
 
 | Flag | Effect |
 |------|--------|
-| `--json` | Output structured JSON for agent categorization (use this when running via skill) |
 | `--since 2h` | Commits from the last duration (30m, 2h, 1d, 3w) |
 | `--commits N` | Last N commits |
 | `--since-commit HASH` | Since a specific commit (exclusive) |
 | `--branch-lifetime` | Full feature branch since diverge point |
 | `--uncommitted` | Uncommitted changes only |
-| `--write [FILE]` | Write to `~/.promptex/projects/{id}/PROMPTS.md` or a named file (incompatible with `--json`) |

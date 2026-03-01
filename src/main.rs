@@ -20,7 +20,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Extract prompts and output PR-ready markdown (smart defaults)
+    /// Extract prompts and output structured JSON for agent-side rendering
     Extract {
         /// Only extract prompts for uncommitted changes
         #[arg(long)]
@@ -41,44 +41,9 @@ enum Commands {
         /// Extract prompts from the last duration (e.g. 2h, 1d, 3w)
         #[arg(long, value_name = "DURATION")]
         since: Option<String>,
-
-        /// Output curated entries as JSON for agent-side categorization
-        #[arg(long)]
-        json: bool,
-
-        /// Write output to a file instead of stdout
-        #[arg(long, short = 'w', value_name = "FILE")]
-        write: Option<Option<String>>,
     },
 
-    /// Journal a prompt entry (called automatically by agent skill)
-    Record {
-        /// The prompt text
-        #[arg(long)]
-        prompt: String,
-
-        /// Comma-separated list of files touched
-        #[arg(long, value_delimiter = ',')]
-        files: Vec<String>,
-
-        /// Comma-separated list of tool calls made (e.g. Edit,Bash,Read)
-        #[arg(long, value_delimiter = ',')]
-        tool_calls: Vec<String>,
-
-        /// Brief description of what was accomplished
-        #[arg(long)]
-        outcome: String,
-
-        /// AI tool used (default: claude-code)
-        #[arg(long, default_value = "claude-code")]
-        tool: String,
-
-        /// Model identifier (e.g. claude-sonnet-4-5)
-        #[arg(long)]
-        model: Option<String>,
-    },
-
-    /// Check if your AI tool is natively supported (exit 0 = yes, exit 1 = use pmtx record)
+    /// Check if your AI tool is natively supported (exit 0 = yes, exit 1 = unsupported)
     Check,
 
     /// Show current project journal status
@@ -105,11 +70,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Extract { uncommitted, commits, since_commit, branch_lifetime, since, json, write } => {
-            commands::extract::execute(uncommitted, commits, since_commit, branch_lifetime, since, json, write)?;
-        }
-        Commands::Record { prompt, files, tool_calls, outcome, tool, model } => {
-            commands::record::execute(&prompt, files, tool_calls, &outcome, &tool, model)?;
+        Commands::Extract { uncommitted, commits, since_commit, branch_lifetime, since } => {
+            commands::extract::execute(uncommitted, commits, since_commit, branch_lifetime, since)?;
         }
         Commands::Check => {
             commands::check::execute()?;
