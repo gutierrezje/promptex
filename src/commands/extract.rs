@@ -122,8 +122,12 @@ pub fn execute(
             eprintln!("\n✓ Written to {path}");
         }
         Some(None) => {
-            std::fs::write("PROMPTS.md", &markdown)?;
-            eprintln!("\n✓ Written to PROMPTS.md");
+            let path = project_id::get_project_dir(&pid)?.join("PROMPTS.md");
+            std::fs::write(&path, &markdown)?;
+            eprintln!("\n✓ Written to {}", path.display());
+            if let Err(e) = open::that(&path) {
+                eprintln!("  (could not open in editor: {e})");
+            }
         }
         None => {
             println!("{markdown}");

@@ -157,6 +157,19 @@ fn format_entry(e: &JournalEntry) -> String {
     }
     s.push('\n');
 
+    // For short replies, surface what was being approved so a PR reviewer
+    // understands the context without reading the full conversation.
+    if let Some(ctx) = &e.assistant_context {
+        let snippet = ctx.trim();
+        let snippet = last_sentence(snippet).unwrap_or(snippet);
+        let snippet = if snippet.len() > 120 { &snippet[..120] } else { snippet };
+        // Only show Re: when the snippet is a question or proposal — a declarative
+        // closing sentence is a non-sequitur and adds noise rather than context.
+        if snippet.contains('?') {
+            s.push_str(&format!("→ Re: *\"{snippet}\"*\n"));
+        }
+    }
+
     // Outcome
     if !e.outcome.is_empty() {
         s.push_str(&format!("→ {}\n", e.outcome));
@@ -181,6 +194,19 @@ fn format_entry(e: &JournalEntry) -> String {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Extract the last sentence from a string, or None if not identifiable.
+///
+/// Used to pull the question out of an assistant turn — questions tend to be
+/// the final sentence of the response.
+fn last_sentence(s: &str) -> Option<&str> {
+    // Split on sentence-ending punctuation followed by whitespace or end-of-string.
+    let boundaries: &[char] = &['.', '?', '!'];
+    let trimmed = s.trim_end_matches(|c: char| c.is_whitespace() || boundaries.contains(&c));
+    let last_boundary = trimmed.rfind(|c: char| boundaries.contains(&c))?;
+    let sentence = s[last_boundary + 1..].trim();
+    if sentence.is_empty() { None } else { Some(sentence) }
+}
 
 /// Human-readable name for a tool slug.
 fn tool_display_name(tool: &str) -> String {
@@ -276,6 +302,7 @@ mod tests {
             outcome: outcome.to_string(),
             tool: tool.to_string(),
             model: model.map(|s| s.to_string()),
+            assistant_context: None,
         }
     }
 
