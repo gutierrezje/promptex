@@ -51,7 +51,7 @@ pmtx extract --commits <N>          # Last N commits
 pmtx extract --since-commit <HASH>  # Since a specific commit
 pmtx extract --uncommitted          # Uncommitted changes only
 pmtx extract --branch-lifetime      # Full branch history since diverge point
-pmtx extract --write                # Write to ~/.promptex/projects/{id}/PROMPTS.md (prints path)
+pmtx extract --write                # Write to ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md and open
 pmtx extract --write <FILE>         # Write to a specific file
 pmtx extract --json                 # Output structured JSON for agent-side categorization
 ```
@@ -77,8 +77,8 @@ pmtx record \
 
 ```bash
 pmtx status                  # Show current project journal stats
-pmtx projects list           # List all tracked projects
-pmtx projects remove <id>    # Remove a project's journal
+pmtx projects list           # List all tracked projects (numbered)
+pmtx projects remove <N|id>  # Remove a project by number or full ID
 pmtx check                   # Check if your AI tool is natively supported (exit 0 = yes)
 ```
 

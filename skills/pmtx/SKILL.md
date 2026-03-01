@@ -162,15 +162,15 @@ Rules:
 
 ### After rendering — write to file
 
-Run `pmtx extract [scope-flags] --write` to save the markdown to `~/.promptex/projects/{id}/PROMPTS.md`. pmtx will print the path and automatically open the file in the system default editor. Tell the user to select all, copy, and paste into their GitHub PR description.
+Run `pmtx extract [scope-flags] --write` to save the markdown to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` and auto-open it. Tell the user to select all, copy, and paste into their GitHub PR description.
 
-If `--write` is not used (agent rendered in chat), write the file yourself and open it:
+If `--write` is not used (agent rendered in chat), write the file yourself using a timestamp in the filename, then open it:
 ```bash
-# write
+# write to e.g. PROMPTS-20260301-1423.md
 # then open (cross-platform):
-open ~/.promptex/projects/{id}/PROMPTS.md        # macOS
-xdg-open ~/.promptex/projects/{id}/PROMPTS.md   # Linux
-start ~/.promptex/projects/{id}/PROMPTS.md       # Windows
+open ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md        # macOS
+xdg-open ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md   # Linux
+start ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md       # Windows
 ```
 
 Other options if the user asks:
