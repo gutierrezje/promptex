@@ -16,7 +16,7 @@ cargo install --path .
 # Work with your AI agent normally (pmtx reads logs automatically)
 cd ~/myproject
 git checkout -b feature/auth-fix
-# ... work with Claude Code, OpenCode, or Codex CLI ...
+# ... work with Claude Code or Codex CLI ...
 
 # Extract prompts correlated to this branch (outputs PR-ready markdown)
 pmtx extract
@@ -32,25 +32,41 @@ gh pr create --title "Fix auth validation" \
    - Claude Code: `~/.claude/projects/{slug}/*.jsonl`
    - Codex CLI / Desktop app: `~/.codex/sessions/YYYY/MM/DD/*.jsonl`
    - Manual fallback: `~/.promptex/projects/{id}/journal.jsonl` (via `pmtx record`)
-   - OpenCode, Cursor, GitHub Copilot: planned for future phases
-2. **Smart scoping**: Analyzes git state to determine relevant range — feature branch lifetime, last N commits, or uncommitted changes
+   - OpenCode, Cursor, GitHub Copilot: planned
+2. **Smart scoping**: Analyzes git state to determine relevant range — feature branch lifetime, last N commits, uncommitted changes, or a time window
 3. **Correlation**: Matches extracted entries to files and commits in scope (time window + file overlap)
-4. **Curation**: Filters, categorizes, and deduplicates prompts *(coming in Phase 7)*
-5. **PR format**: Outputs collapsible markdown for GitHub PR descriptions *(coming in Phase 8)*
+4. **Curation**: Filters noise, deduplicates near-identical prompts, and categorizes into Investigation / Solution / Testing
+5. **PR format**: Outputs collapsible markdown sections for GitHub PR descriptions
 6. **Privacy-first**: `pmtx record` (the manual fallback) redacts sensitive values immediately on write
 7. **Home directory storage**: All state in `~/.promptex/` — no project directory pollution
 
 ## Commands
 
-- **`pmtx extract`** — Extract prompts (smart git-aware defaults, outputs to stdout)
-- **`pmtx extract --write [FILE]`** — Write to file instead of stdout
-- **`pmtx extract --commits <N>`** — Extract for last N commits (fork/main workflow)
-- **`pmtx extract --since-commit <HASH>`** — Extract since a specific commit
-- **`pmtx extract --uncommitted`** — Only uncommitted changes
-- **`pmtx extract --branch-lifetime`** — Full branch history since diverge point
-- **`pmtx record`** — Journal a prompt manually (fallback when no tool logs exist)
-- **`pmtx status`** — Show project journal statistics
-- **`pmtx projects`** — Manage tracked projects
+### Extract
+
+```bash
+pmtx extract                        # Smart default: branch lifetime or last commit
+pmtx extract --since 2h             # Commits from the last 2 hours (also: 30m, 1d, 3w)
+pmtx extract --commits <N>          # Last N commits
+pmtx extract --since-commit <HASH>  # Since a specific commit
+pmtx extract --uncommitted          # Uncommitted changes only
+pmtx extract --branch-lifetime      # Full branch history since diverge point
+pmtx extract --write                # Write to PROMPTS.md instead of stdout
+pmtx extract --write <FILE>         # Write to a specific file
+```
+
+When run in a terminal, `pmtx extract` offers an interactive prompt after printing:
+copy to clipboard (`c`) or write to `PROMPTS.md` (`w`).
+
+### Other commands
+
+```bash
+pmtx status                  # Show current project journal stats
+pmtx projects list           # List all tracked projects
+pmtx projects remove <id>    # Remove a project's journal
+pmtx record                  # Journal a prompt manually (fallback when no tool logs exist)
+pmtx check                   # Check if your AI tool is natively supported
+```
 
 ## Why Use PromptEx?
 
@@ -58,14 +74,9 @@ gh pr create --title "Fix auth validation" \
 - **Build trust**: Show maintainers your reasoning, not just code
 - **Zero pollution**: No files in project directory, no .gitignore needed
 - **Privacy-first**: Auto-redacts sensitive data when writing manual journal entries
-- **Git-aware**: Feature branches, fork workflows, commit-based scoping
+- **Git-aware**: Feature branches, fork workflows, commit-based and time-based scoping
 - **PR-ready**: Default output is copy/paste into GitHub PR description
 - **Fast**: Local processing, no API calls, Rust performance
-
-## Documentation
-
-- `PLAN.md` — Full technical architecture and implementation phases
-- `CLAUDE.md` — Development workflow notes
 
 ## Development
 
@@ -77,16 +88,12 @@ cargo test
 
 ## Status
 
-🚧 **In active development**
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | CLI scaffold | ✅ |
-| 2 | Project ID & home directory storage | ✅ |
-| 3 | Git analysis & smart scope detection | ✅ |
-| 4 | Journaling (`pmtx record`) & redaction | ✅ |
-| 5 | Log extraction (Claude Code, OpenCode, Codex, manual) | ✅ |
-| 6 | Correlation & filtering — match prompts to git scope | ✅ |
-| 7 | Curation & categorization (Investigation / Solution / Testing) | 🎯 next |
-| 8 | Output generation — PR format (stdout) & detailed (--write) | ⬜ |
-| 9 | Polish — `status`, `projects`, interactive clipboard output, config | ⬜ |
+- [x] Phase 1 — CLI scaffold
+- [x] Phase 2 — Project ID & home directory storage
+- [x] Phase 3 — Git analysis & smart scope detection
+- [x] Phase 4 — Journaling (`pmtx record`) & redaction
+- [x] Phase 5 — Log extraction (Claude Code, Codex, manual)
+- [x] Phase 6 — Correlation & filtering
+- [x] Phase 7 — Curation & categorization (Investigation / Solution / Testing)
+- [x] Phase 8 — Output generation — PR format & `--write`
+- [x] Phase 9 — Polish — `status`, `projects`, `--since`, interactive output
