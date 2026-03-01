@@ -129,6 +129,7 @@ pub fn render(
     ));
 
     md.push_str("</details>\n");
+    md.push_str("\n---\n\n*Generated with [PromptEx](https://github.com/gutierrezje/promptex)*\n");
     md
 }
 
