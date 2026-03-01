@@ -58,7 +58,10 @@ pub fn execute(
     let extractor = extractors::detect(&cwd, &pid);
     eprintln!("\n🔎 Loading journal ({})...", extractor.kind.label());
 
-    let raw_entries = extractor.extract(ctx.since, ctx.until)?;
+    let (source_kind, raw_entries) = extractor.extract_with_source(ctx.since, ctx.until)?;
+    if source_kind != extractor.kind {
+        eprintln!("  ↪ Primary source had no entries; switched to {}.", source_kind.label());
+    }
     eprintln!("  ✓ Found {} entries in time range", raw_entries.len());
 
     // ── Step 4: Correlate — filter to scope (Phase 6) ─────────────────────────
