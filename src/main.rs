@@ -61,16 +61,20 @@ enum ProjectsAction {
     /// List all tracked projects
     List,
     /// Remove a specific project by ID
-    Remove {
-        project_id: String,
-    },
+    Remove { project_id: String },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Extract { uncommitted, commits, since_commit, branch_lifetime, since } => {
+        Commands::Extract {
+            uncommitted,
+            commits,
+            since_commit,
+            branch_lifetime,
+            since,
+        } => {
             commands::extract::execute(uncommitted, commits, since_commit, branch_lifetime, since)?;
         }
         Commands::Check => {

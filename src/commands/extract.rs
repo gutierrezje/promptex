@@ -19,12 +19,21 @@ pub fn execute(
     let cwd = env::current_dir()?;
 
     // ── Step 1: Determine scope ───────────────────────────────────────────────
-    let flags = ScopeFlags { uncommitted, commits, since_commit, branch_lifetime, since_duration };
+    let flags = ScopeFlags {
+        uncommitted,
+        commits,
+        since_commit,
+        branch_lifetime,
+        since_duration,
+    };
     let scope = determine_scope(&flags)?;
 
     eprintln!("🔍 Analyzing workspace...");
     match &scope {
-        ExtractionScope::BranchLifetime { branch, since_commit } => {
+        ExtractionScope::BranchLifetime {
+            branch,
+            since_commit,
+        } => {
             eprintln!("  ✓ Branch: {branch} (since {})", &since_commit[..7]);
         }
         ExtractionScope::LastNCommits(n) => {
@@ -58,7 +67,10 @@ pub fn execute(
     // ── Step 3: Detect extractors and pull raw entries ────────────────────────
     let pid = project_id::get_project_id(&cwd)?;
     let extractor = extractors::detect(&cwd, &pid);
-    let kind_label = extractor.primary_kind().map(|k| k.label()).unwrap_or("none");
+    let kind_label = extractor
+        .primary_kind()
+        .map(|k| k.label())
+        .unwrap_or("none");
     eprintln!("\n🔎 Loading journals ({kind_label})...");
 
     let (contributing, raw_entries) = extractor.extract_all(ctx.since, ctx.until)?;

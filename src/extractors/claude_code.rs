@@ -38,9 +38,7 @@ impl ClaudeCodeExtractor {
 
         // Claude Code slugifies the path: replaces '/' with '-'
         // The leading '-' is intentional and part of the slug (e.g. -Users-alice-myproject)
-        let slug = project_root
-            .to_string_lossy()
-            .replace('/', "-");
+        let slug = project_root.to_string_lossy().replace('/', "-");
 
         let candidate = claude_projects.join(&slug);
         if candidate.exists() {
@@ -64,7 +62,7 @@ impl PromptExtractor for ClaudeCodeExtractor {
             .context("Failed to read Claude Code project log directory")?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.extension().map_or(false, |ext| ext == "jsonl"))
+            .filter(|p| p.extension().is_some_and(|ext| ext == "jsonl"))
             .collect();
 
         session_files.sort(); // chronological by filename (sessionId is time-based)
@@ -156,8 +154,7 @@ fn extract_from_session(
                         );
                         // Capture preceding assistant question for short replies
                         if prompt_text.split_whitespace().count() < SHORT_PROMPT_WORD_THRESHOLD {
-                            entry.assistant_context =
-                                extract_preceding_question(&raw_messages, i);
+                            entry.assistant_context = extract_preceding_question(&raw_messages, i);
                         }
                         // Override timestamp with the actual log timestamp
                         entries.push(with_timestamp(entry, ts));
@@ -183,7 +180,11 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
     match content {
         Value::String(s) => {
             let trimmed = s.trim();
-            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
         }
         Value::Array(parts) => {
             // Concatenate all text-type content blocks
@@ -199,7 +200,11 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            if text.is_empty() { None } else { Some(text) }
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
         }
         _ => None,
     }
@@ -220,7 +225,11 @@ fn extract_assistant_text(msg: &RawMessage) -> Option<String> {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        if !text.is_empty() { Some(text) } else { None }
+        if !text.is_empty() {
+            Some(text)
+        } else {
+            None
+        }
     } else {
         None
     }
@@ -256,10 +265,7 @@ fn extract_preceding_question(messages: &[RawMessage], before_idx: usize) -> Opt
 
 /// Walk forward from `start` collecting tool names and file paths until the
 /// next user message (i.e., within a single assistant response turn).
-fn collect_assistant_context(
-    messages: &[RawMessage],
-    start: usize,
-) -> (Vec<String>, Vec<String>) {
+fn collect_assistant_context(messages: &[RawMessage], start: usize) -> (Vec<String>, Vec<String>) {
     let mut tool_calls = Vec::new();
     let mut files_touched = Vec::new();
 

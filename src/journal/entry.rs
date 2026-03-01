@@ -1,9 +1,9 @@
-//! Journal entry structure for prompt logging
+//! Journal entry structure shared across all extractors.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// A single journal entry representing one prompt and its context
+/// A single journal entry representing one prompt and its context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JournalEntry {
     /// When this prompt was issued (ISO-8601)
@@ -27,10 +27,10 @@ pub struct JournalEntry {
     /// Brief description of what happened / was accomplished
     pub outcome: String,
 
-    /// Which AI tool was used (e.g., "claude-code", "cursor")
+    /// Which AI tool was used (e.g., "claude-code", "codex")
     pub tool: String,
 
-    /// Model identifier if known (e.g., "claude-sonnet-4.5")
+    /// Model identifier if known (e.g., "claude-sonnet-4-6")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
@@ -43,7 +43,7 @@ pub struct JournalEntry {
 }
 
 impl JournalEntry {
-    /// Create a new journal entry with current timestamp
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         branch: String,
         commit: String,
@@ -67,16 +67,6 @@ impl JournalEntry {
             assistant_context: None,
         }
     }
-
-    /// Serialize entry to JSON line (for journal.jsonl)
-    pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
-    }
-
-    /// Deserialize entry from JSON line
-    pub fn from_json_line(line: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(line)
-    }
 }
 
 #[cfg(test)]
@@ -93,11 +83,11 @@ mod tests {
             vec!["Edit".to_string()],
             "Added expiry check".to_string(),
             "claude-code".to_string(),
-            Some("claude-sonnet-4.5".to_string()),
+            Some("claude-sonnet-4-6".to_string()),
         );
 
-        let json = entry.to_json_line().unwrap();
-        let parsed = JournalEntry::from_json_line(&json).unwrap();
+        let json = serde_json::to_string(&entry).unwrap();
+        let parsed: JournalEntry = serde_json::from_str(&json).unwrap();
 
         assert_eq!(entry.branch, parsed.branch);
         assert_eq!(entry.prompt, parsed.prompt);

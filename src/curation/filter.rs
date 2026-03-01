@@ -21,7 +21,7 @@ use crate::journal::JournalEntry;
 /// agent read nothing and wrote nothing. They add noise without adding context
 /// for a PR reviewer.
 pub fn apply_artifact_filter(entries: Vec<JournalEntry>) -> Vec<JournalEntry> {
-    entries.into_iter().filter(|e| has_artifact(e)).collect()
+    entries.into_iter().filter(has_artifact).collect()
 }
 
 /// Collapse near-identical prompts into one, keeping the most recent version.
@@ -83,7 +83,11 @@ fn jaccard_similarity(a: &str, b: &str) -> f64 {
     let intersection = tokens_a.intersection(&tokens_b).count();
     let union = tokens_a.union(&tokens_b).count();
 
-    if union == 0 { 0.0 } else { intersection as f64 / union as f64 }
+    if union == 0 {
+        0.0
+    } else {
+        intersection as f64 / union as f64
+    }
 }
 
 fn word_tokens(s: &str) -> HashSet<String> {
@@ -102,8 +106,7 @@ mod tests {
 
     fn entry_at(prompt: &str, h: i64, tool_calls: &[&str], files: &[&str]) -> JournalEntry {
         JournalEntry {
-            timestamp: Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap()
-                + Duration::hours(h),
+            timestamp: Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap() + Duration::hours(h),
             branch: "feature/test".to_string(),
             commit: "abc1234".to_string(),
             prompt: prompt.to_string(),
@@ -142,7 +145,7 @@ mod tests {
     #[test]
     fn test_artifact_filter_mixed() {
         let entries = vec![
-            entry_at("thinking out loud", 0, &[], &[]),  // should be removed
+            entry_at("thinking out loud", 0, &[], &[]), // should be removed
             entry_at("implement auth", 1, &["Edit"], &[]), // should be kept
         ];
         let result = apply_artifact_filter(entries);
@@ -166,8 +169,18 @@ mod tests {
     fn test_dedup_collapses_identical_prompts() {
         // Both prompts >= MIN_WORDS_FOR_JACCARD so dedup applies.
         let entries = vec![
-            entry_at("implement jwt validation in the auth middleware module", 0, &["Edit"], &[]),
-            entry_at("implement jwt validation in the auth middleware module", 1, &["Edit"], &[]),
+            entry_at(
+                "implement jwt validation in the auth middleware module",
+                0,
+                &["Edit"],
+                &[],
+            ),
+            entry_at(
+                "implement jwt validation in the auth middleware module",
+                1,
+                &["Edit"],
+                &[],
+            ),
         ];
         let result = remove_duplicates(entries);
         assert_eq!(result.len(), 1);
@@ -194,8 +207,18 @@ mod tests {
         // tokens_b=same + "please" (9)
         // intersection=8, union=9, sim=0.889 → duplicate; newer wins.
         let entries = vec![
-            entry_at("implement the jwt expiry validation in auth module", 0, &["Edit"], &[]),
-            entry_at("implement the jwt expiry validation in auth module please", 1, &["Edit"], &[]),
+            entry_at(
+                "implement the jwt expiry validation in auth module",
+                0,
+                &["Edit"],
+                &[],
+            ),
+            entry_at(
+                "implement the jwt expiry validation in auth module please",
+                1,
+                &["Edit"],
+                &[],
+            ),
         ];
         let result = remove_duplicates(entries);
         assert_eq!(result.len(), 1);
@@ -205,8 +228,18 @@ mod tests {
     #[test]
     fn test_dedup_case_insensitive() {
         let entries = vec![
-            entry_at("Implement JWT Expiry Validation In The Auth Module", 0, &["Edit"], &[]),
-            entry_at("implement jwt expiry validation in the auth module", 1, &["Edit"], &[]),
+            entry_at(
+                "Implement JWT Expiry Validation In The Auth Module",
+                0,
+                &["Edit"],
+                &[],
+            ),
+            entry_at(
+                "implement jwt expiry validation in the auth module",
+                1,
+                &["Edit"],
+                &[],
+            ),
         ];
         let result = remove_duplicates(entries);
         assert_eq!(result.len(), 1);
@@ -235,8 +268,18 @@ mod tests {
     #[test]
     fn test_jaccard_identical_strings() {
         let entries = vec![
-            entry_at("implement the exact same prompt text in auth module", 0, &["Edit"], &[]),
-            entry_at("implement the exact same prompt text in auth module", 1, &["Edit"], &[]),
+            entry_at(
+                "implement the exact same prompt text in auth module",
+                0,
+                &["Edit"],
+                &[],
+            ),
+            entry_at(
+                "implement the exact same prompt text in auth module",
+                1,
+                &["Edit"],
+                &[],
+            ),
         ];
         assert_eq!(remove_duplicates(entries).len(), 1);
     }

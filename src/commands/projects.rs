@@ -44,15 +44,13 @@ fn load_sorted_projects() -> Result<Vec<ProjectInfo>> {
             continue;
         }
 
-        let last_ts = std::fs::read_dir(&path)
-            .ok()
-            .and_then(|rd| {
-                rd.filter_map(|e| e.ok())
-                    .filter(|e| e.file_name().to_string_lossy().starts_with("PROMPTS-"))
-                    .filter_map(|e| e.metadata().ok()?.modified().ok())
-                    .max()
-                    .map(DateTime::<Utc>::from)
-            });
+        let last_ts = std::fs::read_dir(&path).ok().and_then(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().starts_with("PROMPTS-"))
+                .filter_map(|e| e.metadata().ok()?.modified().ok())
+                .max()
+                .map(DateTime::<Utc>::from)
+        });
         let extractions = std::fs::read_dir(&path)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
@@ -61,7 +59,11 @@ fn load_sorted_projects() -> Result<Vec<ProjectInfo>> {
             })
             .unwrap_or(0);
 
-        projects.push(ProjectInfo { id, last_ts, extractions });
+        projects.push(ProjectInfo {
+            id,
+            last_ts,
+            extractions,
+        });
     }
 
     // Sort: most recent first; projects with no entries go to the bottom
@@ -116,7 +118,9 @@ fn remove(project_id: &str) -> Result<()> {
             .into_iter()
             .nth(n.saturating_sub(1))
             .map(|p| p.id)
-            .with_context(|| format!("No project at index {n} — run `pmtx projects list` to see options"))?
+            .with_context(|| {
+                format!("No project at index {n} — run `pmtx projects list` to see options")
+            })?
     } else {
         project_id.to_string()
     };
@@ -127,8 +131,7 @@ fn remove(project_id: &str) -> Result<()> {
         anyhow::bail!("Project '{resolved_id}' not found at {}", dir.display());
     }
 
-    std::fs::remove_dir_all(&dir)
-        .with_context(|| format!("Failed to remove {}", dir.display()))?;
+    std::fs::remove_dir_all(&dir).with_context(|| format!("Failed to remove {}", dir.display()))?;
 
     println!("Removed project '{resolved_id}'.");
     Ok(())

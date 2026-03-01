@@ -66,7 +66,10 @@ pub fn determine_scope(flags: &ScopeFlags) -> Result<ExtractionScope> {
     if flags.branch_lifetime {
         let branch = git::current_branch()?;
         let since_commit = git::branch_diverge_point()?;
-        return Ok(ExtractionScope::BranchLifetime { branch, since_commit });
+        return Ok(ExtractionScope::BranchLifetime {
+            branch,
+            since_commit,
+        });
     }
 
     // Smart defaults
@@ -80,7 +83,10 @@ pub fn determine_scope(flags: &ScopeFlags) -> Result<ExtractionScope> {
         }
     } else {
         let since_commit = git::branch_diverge_point()?;
-        Ok(ExtractionScope::BranchLifetime { branch, since_commit })
+        Ok(ExtractionScope::BranchLifetime {
+            branch,
+            since_commit,
+        })
     }
 }
 
@@ -94,9 +100,9 @@ fn parse_duration_str(s: &str) -> Result<DateTime<Utc>> {
     }
 
     let (num_str, unit) = s.split_at(s.len() - 1);
-    let n: i64 = num_str
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid duration '{s}' — expected format like '2h', '30m', '1d', '3w'"))?;
+    let n: i64 = num_str.parse().map_err(|_| {
+        anyhow::anyhow!("Invalid duration '{s}' — expected format like '2h', '30m', '1d', '3w'")
+    })?;
 
     if n <= 0 {
         bail!("Duration must be positive, got '{s}'");
@@ -121,7 +127,7 @@ mod tests {
     fn test_explicit_uncommitted_flag_wins() {
         let flags = ScopeFlags {
             uncommitted: true,
-            commits: Some(5),       // would be Commits(5) without the uncommitted flag
+            commits: Some(5), // would be Commits(5) without the uncommitted flag
             since_commit: None,
             branch_lifetime: false,
             since_duration: None,

@@ -30,6 +30,7 @@ use codex::CodexExtractor;
 use traits::PromptExtractor;
 
 type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<Vec<JournalEntry>>>;
+type ExtractResult = Result<(Vec<(ExtractorKind, usize)>, Vec<JournalEntry>)>;
 
 /// Which extractor was selected and is in use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,11 +58,7 @@ impl ActiveExtractor {
     ///
     /// Returns a list of which sources contributed entries (for diagnostics)
     /// alongside the merged, redacted entries.
-    pub fn extract_all(
-        &self,
-        since: DateTime<Utc>,
-        until: DateTime<Utc>,
-    ) -> Result<(Vec<(ExtractorKind, usize)>, Vec<JournalEntry>)> {
+    pub fn extract_all(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> ExtractResult {
         let mut all_entries: Vec<JournalEntry> = Vec::new();
         let mut contributing: Vec<(ExtractorKind, usize)> = Vec::new();
 
@@ -153,8 +150,14 @@ mod tests {
         let (since, until) = window();
         let ex = ActiveExtractor {
             sources: vec![
-                (ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(vec![sample_entry("from claude")]))),
-                (ExtractorKind::Codex, Box::new(|_, _| Ok(vec![sample_entry("from codex")]))),
+                (
+                    ExtractorKind::ClaudeCode,
+                    Box::new(|_, _| Ok(vec![sample_entry("from claude")])),
+                ),
+                (
+                    ExtractorKind::Codex,
+                    Box::new(|_, _| Ok(vec![sample_entry("from codex")])),
+                ),
             ],
         };
 
@@ -169,9 +172,7 @@ mod tests {
     fn extract_all_returns_empty_when_nothing_found() {
         let (since, until) = window();
         let ex = ActiveExtractor {
-            sources: vec![
-                (ExtractorKind::Codex, Box::new(|_, _| Ok(Vec::new()))),
-            ],
+            sources: vec![(ExtractorKind::Codex, Box::new(|_, _| Ok(Vec::new())))],
         };
 
         let (contributing, entries) = ex.extract_all(since, until).unwrap();
@@ -188,9 +189,7 @@ mod tests {
     #[test]
     fn primary_kind_returns_first_source() {
         let ex = ActiveExtractor {
-            sources: vec![
-                (ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(vec![]))),
-            ],
+            sources: vec![(ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(vec![])))],
         };
         assert_eq!(ex.primary_kind(), Some(ExtractorKind::ClaudeCode));
     }

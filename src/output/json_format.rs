@@ -53,7 +53,9 @@ pub fn render_json(
     ctx: &GitContext,
     scope: &ExtractionScope,
 ) -> anyhow::Result<String> {
-    let commits = ctx.commits.iter()
+    let commits = ctx
+        .commits
+        .iter()
         .map(|c| CommitSummary {
             short_hash: c.short_hash.clone(),
             message: c.message.clone(),
@@ -81,9 +83,9 @@ pub fn render_json(
 fn scope_label(scope: &ExtractionScope) -> &'static str {
     match scope {
         ExtractionScope::BranchLifetime { .. } => "branch-lifetime",
-        ExtractionScope::LastNCommits(_)       => "last-n-commits",
-        ExtractionScope::SinceCommit(_)        => "since-commit",
-        ExtractionScope::Uncommitted           => "uncommitted",
-        ExtractionScope::SinceTime(_)          => "since-time",
+        ExtractionScope::LastNCommits(_) => "last-n-commits",
+        ExtractionScope::SinceCommit(_) => "since-commit",
+        ExtractionScope::Uncommitted => "uncommitted",
+        ExtractionScope::SinceTime(_) => "since-time",
     }
 }

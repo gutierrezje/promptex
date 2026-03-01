@@ -11,8 +11,6 @@ use std::process::Command;
 /// A git commit with its changed file list pre-loaded.
 #[derive(Debug, Clone)]
 pub struct Commit {
-    /// Full 40-character SHA.
-    pub hash: String,
     /// Abbreviated 7-character SHA.
     pub short_hash: String,
     /// First line of the commit message.
@@ -24,12 +22,6 @@ pub struct Commit {
 }
 
 // ── Branch helpers ────────────────────────────────────────────────────────────
-
-/// Return the abbreviated SHA of the current HEAD commit.
-pub fn current_commit() -> Result<String> {
-    let out = git(&["rev-parse", "--short", "HEAD"])?;
-    Ok(out.trim().to_string())
-}
 
 /// Return the name of the currently checked-out branch.
 ///
@@ -45,7 +37,10 @@ pub fn current_branch() -> Result<String> {
 
 /// Return true if `branch` is a mainline branch (main, master, develop, trunk).
 pub fn is_mainline_branch(branch: &str) -> bool {
-    matches!(branch, "main" | "master" | "develop" | "trunk" | "development")
+    matches!(
+        branch,
+        "main" | "master" | "develop" | "trunk" | "development"
+    )
 }
 
 /// Find the first mainline branch that exists in this repo.
@@ -125,7 +120,12 @@ pub fn last_n_commits(n: usize) -> Result<Vec<Commit>> {
 /// Returned in chronological order (oldest first).
 pub fn commits_since_time(since: DateTime<Utc>) -> Result<Vec<Commit>> {
     let since_str = since.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    load_commits(&["log", &format!("--after={since_str}"), "--format=%H|%h|%aI|%s", "--reverse"])
+    load_commits(&[
+        "log",
+        &format!("--after={since_str}"),
+        "--format=%H|%h|%aI|%s",
+        "--reverse",
+    ])
 }
 
 // ── Internals ─────────────────────────────────────────────────────────────────
@@ -159,15 +159,20 @@ fn load_commits(log_args: &[&str]) -> Result<Vec<Commit>> {
             continue;
         }
 
-        let hash = parts[0].to_string();
+        let hash = parts[0];
         let short_hash = parts[1].to_string();
         let timestamp = DateTime::parse_from_rfc3339(parts[2])
             .with_context(|| format!("Failed to parse commit timestamp: {}", parts[2]))?
             .with_timezone(&Utc);
         let message = parts[3].to_string();
-        let files = files_in_commit(&hash)?;
+        let files = files_in_commit(hash)?;
 
-        commits.push(Commit { hash, short_hash, message, timestamp, files });
+        commits.push(Commit {
+            short_hash,
+            message,
+            timestamp,
+            files,
+        });
     }
 
     Ok(commits)
@@ -176,7 +181,11 @@ fn load_commits(log_args: &[&str]) -> Result<Vec<Commit>> {
 /// List files changed in a single commit.
 fn files_in_commit(hash: &str) -> Result<Vec<String>> {
     let raw = git(&["diff-tree", "--no-commit-id", "-r", "--name-only", hash])?;
-    Ok(raw.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+    Ok(raw
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -211,7 +220,6 @@ mod tests {
         assert!(commits.len() <= 3);
         // Each commit should have a non-empty hash and message.
         for c in &commits {
-            assert_eq!(c.hash.len(), 40);
             assert_eq!(c.short_hash.len(), 7);
             assert!(!c.message.is_empty());
         }

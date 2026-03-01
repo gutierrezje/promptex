@@ -16,9 +16,5 @@ pub trait PromptExtractor {
     /// Extract prompt entries whose timestamps fall within `[since, until]`.
     ///
     /// Entries are returned in chronological order (oldest first).
-    fn extract(
-        &self,
-        since: DateTime<Utc>,
-        until: DateTime<Utc>,
-    ) -> Result<Vec<JournalEntry>>;
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<JournalEntry>>;
 }

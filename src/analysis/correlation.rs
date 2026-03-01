@@ -54,25 +54,37 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
         ExtractionScope::BranchLifetime { since_commit, .. } => {
             let commits = git::commits_since(since_commit)?;
             let scope_files = collect_files(&commits);
-            let since = earliest_commit_time(&commits)
-                .unwrap_or_else(|| until - Duration::days(7));
-            Ok(GitContext { scope_files, since, until, commits })
+            let since = earliest_commit_time(&commits).unwrap_or_else(|| until - Duration::days(7));
+            Ok(GitContext {
+                scope_files,
+                since,
+                until,
+                commits,
+            })
         }
 
         ExtractionScope::LastNCommits(n) => {
             let commits = git::last_n_commits(*n)?;
             let scope_files = collect_files(&commits);
-            let since = earliest_commit_time(&commits)
-                .unwrap_or_else(|| until - Duration::days(1));
-            Ok(GitContext { scope_files, since, until, commits })
+            let since = earliest_commit_time(&commits).unwrap_or_else(|| until - Duration::days(1));
+            Ok(GitContext {
+                scope_files,
+                since,
+                until,
+                commits,
+            })
         }
 
         ExtractionScope::SinceCommit(hash) => {
             let commits = git::commits_since(hash)?;
             let scope_files = collect_files(&commits);
-            let since = earliest_commit_time(&commits)
-                .unwrap_or_else(|| until - Duration::days(7));
-            Ok(GitContext { scope_files, since, until, commits })
+            let since = earliest_commit_time(&commits).unwrap_or_else(|| until - Duration::days(7));
+            Ok(GitContext {
+                scope_files,
+                since,
+                until,
+                commits,
+            })
         }
 
         ExtractionScope::Uncommitted => {
@@ -83,13 +95,23 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
                 .next()
                 .map(|c| c.timestamp)
                 .unwrap_or_else(|| until - Duration::hours(24));
-            Ok(GitContext { scope_files, since, until, commits: Vec::new() })
+            Ok(GitContext {
+                scope_files,
+                since,
+                until,
+                commits: Vec::new(),
+            })
         }
 
         ExtractionScope::SinceTime(since) => {
             let commits = git::commits_since_time(*since)?;
             let scope_files = collect_files(&commits);
-            Ok(GitContext { scope_files, since: *since, until, commits })
+            Ok(GitContext {
+                scope_files,
+                since: *since,
+                until,
+                commits,
+            })
         }
     }
 }
@@ -125,7 +147,10 @@ fn in_time_window(entry: &JournalEntry, ctx: &GitContext) -> bool {
 }
 
 fn touches_scope_file(entry: &JournalEntry, ctx: &GitContext) -> bool {
-    entry.files_touched.iter().any(|f| ctx.scope_files.contains(f))
+    entry
+        .files_touched
+        .iter()
+        .any(|f| ctx.scope_files.contains(f))
 }
 
 /// Collect the union of files changed across all commits, deduplicated.
@@ -257,7 +282,7 @@ mod tests {
     #[test]
     fn test_filter_keeps_entry_matching_either_condition() {
         let ctx = make_ctx(t(0), t(2), &["src/auth.rs"]);
-        let in_window = make_entry(t(1), &[], &[]);           // time match
+        let in_window = make_entry(t(1), &[], &[]); // time match
         let file_match = make_entry(t(5), &["src/auth.rs"], &[]); // file match
         let neither = make_entry(t(5), &["src/other.rs"], &[]); // no match
         let filtered = filter_by_scope(&[in_window, file_match, neither], &ctx);
@@ -299,14 +324,12 @@ mod tests {
     fn test_collect_files_deduplicates() {
         use crate::analysis::git::Commit;
         let c1 = Commit {
-            hash: "a".repeat(40),
             short_hash: "aaaaaaa".to_string(),
             message: "first".to_string(),
             timestamp: t(0),
             files: vec!["src/a.rs".to_string(), "src/b.rs".to_string()],
         };
         let c2 = Commit {
-            hash: "b".repeat(40),
             short_hash: "bbbbbbb".to_string(),
             message: "second".to_string(),
             timestamp: t(1),

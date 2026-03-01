@@ -3,6 +3,7 @@
 //! ⚠️  NOT WIRED INTO DETECTION — needs rewrite before use.
 //!
 //! OpenCode v1.2+ migrated from JSON files to SQLite:
+#![allow(dead_code, clippy::unnecessary_map_or, clippy::needless_return)]
 //!   Old (≤v1.1): JSON files at ~/.local/share/opencode/storage/message/
 //!   New (v1.2+):  SQLite at ~/.local/share/opencode/opencode.db
 //!
@@ -41,7 +42,11 @@ impl OpenCodeExtractor {
             .join("opencode")
             .join("storage")
             .join("message");
-        if dir.exists() { Some(dir) } else { None }
+        if dir.exists() {
+            Some(dir)
+        } else {
+            None
+        }
     }
 }
 
@@ -76,11 +81,13 @@ impl PromptExtractor for OpenCodeExtractor {
 
         for file in &files {
             let f = File::open(file)?;
-            let msg: OpenCodeMessage = serde_json::from_reader(BufReader::new(f))
-                .unwrap_or_else(|_| return OpenCodeMessage {
-                    role: None,
-                    created_at: None,
-                    parts: None,
+            let msg: OpenCodeMessage =
+                serde_json::from_reader(BufReader::new(f)).unwrap_or_else(|_| {
+                    return OpenCodeMessage {
+                        role: None,
+                        created_at: None,
+                        parts: None,
+                    };
                 });
 
             if let Some(ts) = msg.created_at {
@@ -97,8 +104,7 @@ impl PromptExtractor for OpenCodeExtractor {
             let (ts, msg) = &messages[i];
             if msg.role.as_deref() == Some("user") {
                 if let Some(text) = extract_text_from_parts(msg.parts.as_deref()) {
-                    let (tool_calls, files_touched) =
-                        collect_next_assistant(&messages, i + 1);
+                    let (tool_calls, files_touched) = collect_next_assistant(&messages, i + 1);
 
                     let entry = JournalEntry::new(
                         "unknown".to_string(), // OpenCode doesn't embed git branch in messages
@@ -134,7 +140,11 @@ fn extract_text_from_parts(parts: Option<&[Value]>) -> Option<String> {
         .collect::<Vec<_>>()
         .join(" ");
 
-    if text.is_empty() { None } else { Some(text) }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 fn collect_next_assistant(

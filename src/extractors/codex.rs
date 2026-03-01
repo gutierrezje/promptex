@@ -79,7 +79,7 @@ fn collect_jsonl_files(dir: &Path) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_dir() {
             files.extend(collect_jsonl_files(&path));
-        } else if path.extension().map_or(false, |ext| ext == "jsonl") {
+        } else if path.extension().is_some_and(|ext| ext == "jsonl") {
             files.push(path);
         }
     }
