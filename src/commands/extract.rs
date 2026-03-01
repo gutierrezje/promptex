@@ -4,6 +4,8 @@ use anyhow::Result;
 
 use crate::analysis::correlation::{build_git_context, filter_by_scope};
 use crate::analysis::scope::{determine_scope, ExtractionScope, ScopeFlags};
+use crate::curation::categorize::{categorize, Intent};
+use crate::curation::filter::{apply_artifact_filter, remove_duplicates};
 use crate::extractors;
 use crate::project_id;
 
@@ -62,8 +64,9 @@ pub fn execute(
     let entries = filter_by_scope(&raw_entries, &ctx);
     eprintln!("  ✓ Filtered to {} relevant entries", entries.len());
 
-    // ── TODO Phase 7: curate (categorize, deduplicate) ────────────────────────
-    // ── TODO Phase 8: format and output ──────────────────────────────────────
+    // ── Step 5: Curate — artifact filter + deduplication (Phase 7) ───────────
+    let entries = apply_artifact_filter(entries);
+    let entries = remove_duplicates(entries);
 
     if entries.is_empty() {
         eprintln!("\nNo prompts found for this scope.");
@@ -71,15 +74,43 @@ pub fn execute(
         return Ok(());
     }
 
-    // Temporary plain-text preview until output formatting is implemented.
-    eprintln!("\n📝 Prompts in scope ({} entries):", entries.len());
+    // ── Step 6: Categorize (Phase 7) ──────────────────────────────────────────
+    let mut investigations: Vec<_> = Vec::new();
+    let mut solutions: Vec<_> = Vec::new();
+    let mut tests: Vec<_> = Vec::new();
+
     for e in &entries {
-        println!(
-            "[{}] ({}) {}",
-            e.timestamp.format("%H:%M"),
-            e.tool,
-            e.prompt,
-        );
+        match categorize(e) {
+            Intent::Investigation => investigations.push(e),
+            Intent::Solution => solutions.push(e),
+            Intent::Testing => tests.push(e),
+        }
+    }
+
+    eprintln!("\n📝 Curating prompt log...");
+    eprintln!("  Investigation: {} prompts", investigations.len());
+    eprintln!("  Solution: {} prompts", solutions.len());
+    eprintln!("  Testing: {} prompts", tests.len());
+
+    // ── TODO Phase 8: format and output ──────────────────────────────────────
+    // Temporary grouped preview until output formatting is implemented.
+    for (label, group) in [
+        (format!("{} Investigation", Intent::Investigation.emoji()), &investigations),
+        (format!("{} Solution", Intent::Solution.emoji()), &solutions),
+        (format!("{} Testing", Intent::Testing.emoji()), &tests),
+    ] {
+        if group.is_empty() {
+            continue;
+        }
+        println!("\n### {label}");
+        for e in group {
+            println!(
+                "[{}] ({}) {}",
+                e.timestamp.format("%H:%M"),
+                e.tool,
+                e.prompt,
+            );
+        }
     }
 
     Ok(())
