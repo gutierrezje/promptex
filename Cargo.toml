@@ -2,7 +2,7 @@
 name = "promptex"
 version = "0.1.0"
 edition = "2021"
-authors = ["Jesus <you@example.com>"]
+authors = ["Jesus Gutierrez <gutierrezje.work@gmail.com>"]
 description = "Extract and curate AI prompts for your pull requests"
 license = "MIT"
 

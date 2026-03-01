@@ -37,8 +37,12 @@ pmtx record \
   --prompt "<the user's prompt or your summary of the task>" \
   --files "<comma-separated list of files touched, e.g. src/main.rs,src/lib.rs>" \
   --tool-calls "<comma-separated tools used, e.g. Edit,Bash,Read>" \
-  --outcome "<one sentence: what was accomplished>"
+  --outcome "<one sentence: what was accomplished>" \
+  --tool "<your tool slug, e.g. opencode, cursor, copilot>" \
+  --model "<model identifier, e.g. gpt-4o, gemini-2.0-flash>"
 ```
+
+`--tool` defaults to `claude-code` if omitted. `--model` is optional but recommended for attribution. Omit both if the defaults are correct for your tool.
 
 **What counts as a "significant action":**
 - Writing or editing source code

@@ -58,14 +58,27 @@ pmtx extract --write <FILE>         # Write to a specific file
 When run in a terminal, `pmtx extract` offers an interactive prompt after printing:
 copy to clipboard (`c`) or write to `PROMPTS.md` (`w`).
 
+### Record (manual fallback)
+
+For AI tools without native log support, journal prompts manually after each significant action:
+
+```bash
+pmtx record \
+  --prompt "implement JWT validation" \
+  --files "src/auth.rs,src/middleware.rs" \
+  --tool-calls "Edit,Bash,Read" \
+  --outcome "Added JWT validation middleware with expiry checking" \
+  --tool opencode \          # optional, defaults to claude-code
+  --model gemini-2.0-flash   # optional
+```
+
 ### Other commands
 
 ```bash
 pmtx status                  # Show current project journal stats
 pmtx projects list           # List all tracked projects
 pmtx projects remove <id>    # Remove a project's journal
-pmtx record                  # Journal a prompt manually (fallback when no tool logs exist)
-pmtx check                   # Check if your AI tool is natively supported
+pmtx check                   # Check if your AI tool is natively supported (exit 0 = yes)
 ```
 
 ## Why Use PromptEx?
