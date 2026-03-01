@@ -142,20 +142,20 @@ fn format_entry(e: &JournalEntry) -> String {
     let model_suffix = e.model.as_deref()
         .map(|m| format!(" · {m}"))
         .unwrap_or_default();
-    let title = derive_title(&e.prompt);
 
+    // Header: timestamp + tool only — no truncated title that repeats below
     s.push_str(&format!(
-        "**[{}] ({}{}) {}**\n",
+        "**[{}] ({}{})**\n",
         e.timestamp.format("%H:%M"),
         tool_name,
         model_suffix,
-        title,
     ));
 
-    // Prompt block
-    s.push_str("```\n");
-    s.push_str(e.prompt.trim());
-    s.push_str("\n```\n");
+    // Prompt as blockquote — shown once, full text, no code fence
+    for line in e.prompt.trim().lines() {
+        s.push_str(&format!("> {line}\n"));
+    }
+    s.push('\n');
 
     // Outcome
     if !e.outcome.is_empty() {
@@ -181,44 +181,6 @@ fn format_entry(e: &JournalEntry) -> String {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Shorten and capitalise a prompt into a one-line title.
-///
-/// Strips common polite fillers ("can you", "please", etc.) from the start,
-/// then truncates to 60 characters.
-fn derive_title(prompt: &str) -> String {
-    let first_line = prompt.lines().next().unwrap_or(prompt).trim();
-    let stripped = strip_filler(first_line);
-    let capitalised = capitalise(stripped);
-
-    if capitalised.chars().count() > 60 {
-        let truncated: String = capitalised.chars().take(57).collect();
-        format!("{truncated}...")
-    } else {
-        capitalised
-    }
-}
-
-fn strip_filler(s: &str) -> &str {
-    let lower = s.to_lowercase();
-    for filler in &[
-        "can you ", "could you ", "please ", "i need you to ", "i want you to ",
-        "would you ", "help me ", "i'd like you to ",
-    ] {
-        if lower.starts_with(filler) {
-            return &s[filler.len()..];
-        }
-    }
-    s
-}
-
-fn capitalise(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(first) => first.to_uppercase().collect::<String>() + c.as_str(),
-    }
-}
 
 /// Human-readable name for a tool slug.
 fn tool_display_name(tool: &str) -> String {
@@ -356,37 +318,6 @@ mod tests {
     #[test]
     fn test_duration_exact_hours() {
         assert_eq!(format_duration(Duration::hours(2)), "2h");
-    }
-
-    // ── derive_title ──────────────────────────────────────────────────────
-
-    #[test]
-    fn test_title_capitalises_first_letter() {
-        assert_eq!(derive_title("implement jwt validation"), "Implement jwt validation");
-    }
-
-    #[test]
-    fn test_title_strips_please() {
-        assert_eq!(derive_title("please fix the auth bug"), "Fix the auth bug");
-    }
-
-    #[test]
-    fn test_title_strips_can_you() {
-        assert_eq!(derive_title("can you add a test"), "Add a test");
-    }
-
-    #[test]
-    fn test_title_truncates_long_prompt() {
-        let long = "implement the full jwt validation with expiry checking and token refresh logic here";
-        let title = derive_title(long);
-        assert!(title.ends_with("..."));
-        assert!(title.chars().count() <= 60);
-    }
-
-    #[test]
-    fn test_title_uses_first_line_only() {
-        let multiline = "fix auth bug\nmore details on line two";
-        assert_eq!(derive_title(multiline), "Fix auth bug");
     }
 
     // ── tool_display_name ─────────────────────────────────────────────────
