@@ -70,6 +70,9 @@ enum Commands {
         model: Option<String>,
     },
 
+    /// Check if your AI tool is natively supported (exit 0 = yes, exit 1 = use pmtx record)
+    Check,
+
     /// Show current project journal status
     Status,
 
@@ -99,6 +102,9 @@ fn main() -> Result<()> {
         }
         Commands::Record { prompt, files, tool_calls, outcome, tool, model } => {
             commands::record::execute(&prompt, files, tool_calls, &outcome, &tool, model)?;
+        }
+        Commands::Check => {
+            commands::check::execute()?;
         }
         Commands::Status => {
             commands::status::execute()?;
