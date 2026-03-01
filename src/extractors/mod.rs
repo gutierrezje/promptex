@@ -25,6 +25,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::Path;
 
+use crate::curation::redact::redact;
 use crate::journal::JournalEntry;
 use claude_code::ClaudeCodeExtractor;
 use codex::CodexExtractor;
@@ -68,18 +69,33 @@ impl ActiveExtractor {
     ) -> Result<(ExtractorKind, Vec<JournalEntry>)> {
         let entries = (self.extractor)(since, until)?;
         if !entries.is_empty() || self.kind == ExtractorKind::Manual {
-            return Ok((self.kind, entries));
+            return Ok((self.kind, redact_entries(entries)));
         }
 
         if let Some(fallback) = &self.manual_fallback {
             let manual_entries = fallback(since, until)?;
             if !manual_entries.is_empty() {
-                return Ok((ExtractorKind::Manual, manual_entries));
+                return Ok((ExtractorKind::Manual, redact_entries(manual_entries)));
             }
         }
 
         Ok((self.kind, entries))
     }
+}
+
+/// Apply redaction to the prompt field of every entry.
+///
+/// Called on all extractor output so sensitive values (API keys, emails, tokens)
+/// are scrubbed regardless of which extractor produced the entries.
+fn redact_entries(entries: Vec<JournalEntry>) -> Vec<JournalEntry> {
+    entries
+        .into_iter()
+        .map(|mut e| {
+            let (redacted, _) = redact(&e.prompt);
+            e.prompt = redacted;
+            e
+        })
+        .collect()
 }
 
 /// Detect and return the best extractor for `project_root`.

@@ -39,6 +39,11 @@ static PATTERNS: &[(&str, &str)] = &[
         "credential",
         r#"(?i)(?:password|passwd|secret|token|auth|api[_\-]?key)\s*[:=]\s*["']?[^\s"',\]]{8,}["']?"#,
     ),
+    // Email addresses
+    (
+        "email",
+        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
+    ),
 ];
 
 /// Redact sensitive values from `text`.
@@ -117,6 +122,15 @@ mod tests {
         let (out, redactions) = redact(input);
         assert!(!out.contains("abcdefghijk"));
         assert!(out.contains("[REDACTED:bearer_token]"));
+    }
+
+    #[test]
+    fn test_redacts_email_address() {
+        let input = "yes, my email is user@example.com";
+        let (out, redactions) = redact(input);
+        assert!(!out.contains("user@example.com"));
+        assert!(out.contains("[REDACTED:email]"));
+        assert_eq!(redactions[0].kind, "email");
     }
 
     #[test]
