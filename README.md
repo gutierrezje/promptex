@@ -35,7 +35,7 @@ gh pr create --title "Fix auth validation" \
    - OpenCode, Cursor, GitHub Copilot: planned
 2. **Smart scoping**: Analyzes git state to determine relevant range — feature branch lifetime, last N commits, uncommitted changes, or a time window
 3. **Correlation**: Matches extracted entries to files and commits in scope (time window + file overlap)
-4. **Curation**: Filters noise, deduplicates near-identical prompts, and categorizes into Investigation / Solution / Testing
+4. **Curation**: Filters noise and deduplicates near-identical prompts. Categorization is done by the running agent (`--json`) for semantic accuracy, or by built-in rules when used directly from the CLI
 5. **PR format**: Outputs collapsible markdown sections for GitHub PR descriptions
 6. **Privacy-first**: `pmtx record` (the manual fallback) redacts sensitive values immediately on write
 7. **Home directory storage**: All state in `~/.promptex/` — no project directory pollution
@@ -53,6 +53,7 @@ pmtx extract --uncommitted          # Uncommitted changes only
 pmtx extract --branch-lifetime      # Full branch history since diverge point
 pmtx extract --write                # Write to PROMPTS.md instead of stdout
 pmtx extract --write <FILE>         # Write to a specific file
+pmtx extract --json                 # Output structured JSON for agent-side categorization
 ```
 
 When run in a terminal, `pmtx extract` offers an interactive prompt after printing:

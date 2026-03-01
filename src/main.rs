@@ -42,6 +42,10 @@ enum Commands {
         #[arg(long, value_name = "DURATION")]
         since: Option<String>,
 
+        /// Output curated entries as JSON for agent-side categorization
+        #[arg(long)]
+        json: bool,
+
         /// Write output to a file instead of stdout
         #[arg(long, short = 'w', value_name = "FILE")]
         write: Option<Option<String>>,
@@ -101,8 +105,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Extract { uncommitted, commits, since_commit, branch_lifetime, since, write } => {
-            commands::extract::execute(uncommitted, commits, since_commit, branch_lifetime, since, write)?;
+        Commands::Extract { uncommitted, commits, since_commit, branch_lifetime, since, json, write } => {
+            commands::extract::execute(uncommitted, commits, since_commit, branch_lifetime, since, json, write)?;
         }
         Commands::Record { prompt, files, tool_calls, outcome, tool, model } => {
             commands::record::execute(&prompt, files, tool_calls, &outcome, &tool, model)?;

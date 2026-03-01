@@ -8,6 +8,7 @@ use crate::curation::categorize::{categorize, Intent};
 use crate::curation::filter::{apply_artifact_filter, remove_duplicates};
 use crate::extractors;
 use crate::output::interactive;
+use crate::output::json_format;
 use crate::output::pr_format;
 use crate::project_id;
 
@@ -17,8 +18,12 @@ pub fn execute(
     since_commit: Option<String>,
     branch_lifetime: bool,
     since_duration: Option<String>,
+    json: bool,
     write_to: Option<Option<String>>,
 ) -> Result<()> {
+    if json && write_to.is_some() {
+        anyhow::bail!("--json and --write are mutually exclusive");
+    }
     let cwd = env::current_dir()?;
 
     // ── Step 1: Determine scope ───────────────────────────────────────────────
@@ -80,6 +85,13 @@ pub fn execute(
     if entries.is_empty() {
         eprintln!("\nNo prompts found for this scope.");
         eprintln!("Try widening the scope with --commits N or --branch-lifetime.");
+        return Ok(());
+    }
+
+    // ── Step 6 (json path): emit structured JSON for agent categorization ─────
+    if json {
+        let out = json_format::render_json(&entries, &ctx, &scope)?;
+        println!("{out}");
         return Ok(());
     }
 
