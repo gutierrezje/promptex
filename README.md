@@ -26,7 +26,7 @@ The agent skill handles the full workflow. Install it once:
 
 ```bash
 # In the promptex repo (dogfooding)
-# Already installed at .claude/skills/pmtx/
+# Already installed at .agents/skills/pmtx/
 
 # For any other project (via npx):
 npx skills add promptex
@@ -79,7 +79,7 @@ pmtx projects remove <N|id>  # Remove a project by number or full ID
 | Cursor | ⏳ Planned |
 | GitHub Copilot | ⏳ Planned |
 
-Native support means `pmtx extract` reads the tool's logs directly — no manual journaling needed.
+Native support means `pmtx extract` reads the tool's logs directly with no setup required.
 
 ## Why Use PromptEx?
 
@@ -100,7 +100,7 @@ cargo test
 ./target/debug/pmtx --help
 ```
 
-After cloning, activate the pre-commit hook (keeps `.claude/skills/` in sync with `skills/`):
+After cloning, activate the pre-commit hook (keeps `.claude/skills/` in sync with `.agents/skills/`):
 
 ```bash
 git config core.hooksPath .githooks

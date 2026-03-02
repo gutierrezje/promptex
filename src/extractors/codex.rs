@@ -10,8 +10,9 @@
 //!     - `{"type":"event_msg","payload":{"type":"user_message", ...}}`
 //!     - `{"type":"response_item","payload":{"type":"function_call"|"custom_tool_call", ...}}`
 //!
-//! Unlike Claude Code and OpenCode, timestamps are session-level only (line 0).
-//! All entries from a session share the session start timestamp.
+//! Codex logs include timestamps on each JSONL event line.
+//! We timestamp each extracted prompt from its `user_message` event timestamp
+//! (falling back to session metadata only when needed).
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -113,15 +114,9 @@ fn extract_from_rollout(
         return Ok(Vec::new());
     }
 
-    // Line 0 is always session_meta — session-level timestamp and model.
-    let session_ts = match parse_session_timestamp(&lines[0], path) {
-        Some(ts) => ts,
-        None => return Ok(Vec::new()),
-    };
-
-    if session_ts < since || session_ts > until {
-        return Ok(Vec::new());
-    }
+    // Line 0 is always session_meta — used for model attribution and as a
+    // timestamp fallback when per-event timestamps are missing.
+    let session_ts_fallback = parse_session_timestamp(&lines[0], path);
 
     let model = extract_session_model(&lines[0]);
 
@@ -131,6 +126,15 @@ fn extract_from_rollout(
 
     while i < lines.len() {
         if let Some(prompt) = extract_user_message(&lines[i]) {
+            let Some(prompt_ts) = parse_event_timestamp(&lines[i]).or(session_ts_fallback) else {
+                i += 1;
+                continue;
+            };
+            if prompt_ts < since || prompt_ts > until {
+                i += 1;
+                continue;
+            }
+
             let (tool_calls, files_touched) = collect_turn_tools(&lines, i + 1);
 
             let entry = JournalEntry::new(
@@ -143,7 +147,7 @@ fn extract_from_rollout(
                 "codex".to_string(),
                 model.clone(),
             );
-            entries.push(with_timestamp(entry, session_ts));
+            entries.push(with_timestamp(entry, prompt_ts));
         }
 
         i += 1;
@@ -204,6 +208,20 @@ fn extract_session_model(meta: &Value) -> Option<String> {
         .and_then(|p| p.get("model_provider"))
         .and_then(|v| v.as_str())
         .map(String::from)
+}
+
+fn parse_event_timestamp(event: &Value) -> Option<DateTime<Utc>> {
+    event
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            event
+                .get("payload")
+                .and_then(|p| p.get("timestamp"))
+                .and_then(|v| v.as_str())
+        })
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
 }
 
 // ── Event parsing ──────────────────────────────────────────────────────────────
@@ -593,6 +611,20 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_event_timestamp_from_line() {
+        let event = serde_json::json!({
+            "timestamp": "2026-03-01T23:47:54.761Z",
+            "type": "event_msg",
+            "payload": {"type": "user_message", "message": "extract prompts"}
+        });
+        let ts = parse_event_timestamp(&event).unwrap();
+        assert_eq!(
+            ts.format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2026-03-01 23:47:54"
+        );
+    }
+
+    #[test]
     fn test_normalize_tool_name() {
         assert_eq!(normalize_tool_name("edit"), "Edit");
         assert_eq!(normalize_tool_name("read_file"), "Read");
@@ -662,6 +694,29 @@ mod tests {
         assert_eq!(entries[0].tool_calls, vec!["Bash", "Patch"]);
         assert_eq!(entries[0].files_touched, vec!["Cargo.toml"]);
         assert_eq!(entries[1].prompt, "second prompt");
+    }
+
+    #[test]
+    fn test_uses_user_message_timestamp_for_filtering() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir
+            .path()
+            .join("rollout-2026-01-15T10-00-00-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-01-15T10:00:00Z","cwd":"/proj","originator":"cli","source":"cli"}}}}"#).unwrap();
+        writeln!(f, r#"{{"timestamp":"2026-01-16T00:10:00Z","type":"event_msg","payload":{{"type":"user_message","content":"in range prompt"}}}}"#).unwrap();
+
+        let since = Utc.with_ymd_and_hms(2026, 1, 16, 0, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 1, 16, 1, 0, 0).unwrap();
+        let entries = extract_from_rollout(&path, since, until).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].prompt, "in range prompt");
+        assert_eq!(
+            entries[0].timestamp,
+            Utc.with_ymd_and_hms(2026, 1, 16, 0, 10, 0).unwrap()
+        );
     }
 
     #[test]
