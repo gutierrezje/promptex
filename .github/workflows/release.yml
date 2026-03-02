@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-macos-arm:
+    name: macOS Apple Silicon
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --target aarch64-apple-darwin
+      - name: Package
+        run: |
+          tar -czf pmtx-aarch64-apple-darwin.tar.gz \
+            -C target/aarch64-apple-darwin/release pmtx
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pmtx-aarch64-apple-darwin.tar.gz
