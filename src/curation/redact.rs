@@ -5,6 +5,7 @@
 //! while secrets are removed.
 
 use regex::Regex;
+use std::sync::OnceLock;
 
 /// Patterns ordered from most-specific to least-specific to avoid
 /// partial matches being clobbered by a broader rule.
@@ -32,6 +33,17 @@ static PATTERNS: &[(&str, &str)] = &[
     ("email", r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"),
 ];
 
+static COMPILED: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
+
+fn compiled_patterns() -> &'static [(&'static str, Regex)] {
+    COMPILED.get_or_init(|| {
+        PATTERNS
+            .iter()
+            .map(|(kind, pat)| (*kind, Regex::new(pat).expect("redaction pattern is valid")))
+            .collect()
+    })
+}
+
 /// Redact sensitive values from `text`.
 ///
 /// Returns the sanitised string and the kinds of values that were found,
@@ -40,8 +52,7 @@ pub fn redact(text: &str) -> (String, Vec<&'static str>) {
     let mut result = text.to_string();
     let mut kinds = Vec::new();
 
-    for (kind, pattern) in PATTERNS {
-        let re = Regex::new(pattern).expect("redaction pattern is valid");
+    for (kind, re) in compiled_patterns() {
         if re.is_match(&result) {
             kinds.push(*kind);
             result = re

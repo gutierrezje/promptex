@@ -64,14 +64,28 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
         }
 
         ExtractionScope::LastNCommits(n) => {
-            let commits = git::last_n_commits(*n)?;
-            let scope_files = collect_files(&commits);
-            let since = earliest_commit_time(&commits).unwrap_or_else(|| until - Duration::days(1));
+            // Load one extra commit as a look-behind anchor so we can bound the
+            // window to [anchor.timestamp, scope_commits.latest.timestamp].
+            // Prompts that produced a commit happen *before* it, not after, so
+            // `until` must be the commit time rather than `now`.
+            let all = git::last_n_commits(n + 1)?;
+            let (scope_commits, since) = if all.len() > *n {
+                // oldest entry is the anchor (just outside scope)
+                let anchor_time = all[0].timestamp;
+                (all[1..].to_vec(), anchor_time)
+            } else {
+                // fewer commits than requested — use all, fall back for since
+                let fallback = earliest_commit_time(&all)
+                    .unwrap_or_else(|| until - Duration::days(7));
+                (all, fallback)
+            };
+            let scope_files = collect_files(&scope_commits);
+            let commit_until = latest_commit_time(&scope_commits).unwrap_or(until);
             Ok(GitContext {
                 scope_files,
                 since,
-                until,
-                commits,
+                until: commit_until,
+                commits: scope_commits,
             })
         }
 
@@ -164,6 +178,11 @@ fn collect_files(commits: &[Commit]) -> Vec<String> {
 /// Return the timestamp of the earliest commit, or `None` if the list is empty.
 fn earliest_commit_time(commits: &[Commit]) -> Option<DateTime<Utc>> {
     commits.iter().map(|c| c.timestamp).min()
+}
+
+/// Return the timestamp of the latest commit, or `None` if the list is empty.
+fn latest_commit_time(commits: &[Commit]) -> Option<DateTime<Utc>> {
+    commits.iter().map(|c| c.timestamp).max()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
