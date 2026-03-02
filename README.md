@@ -26,10 +26,10 @@ The agent skill handles the full workflow. Install it once:
 
 ```bash
 # In the promptex repo (dogfooding)
-# Already installed at .agents/skills/pmtx/
+# Already installed at .agents/skills/prompt-history/
 
 # For any other project (via npx):
-npx skills add promptex
+npx skills add promptex/prompt-history
 ```
 
 ## How It Works

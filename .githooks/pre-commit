@@ -1,11 +1,12 @@
 #!/bin/sh
-# .agents/skills/pmtx/SKILL.md is the canonical source of truth.
-# Mirror it to .claude/skills/pmtx/SKILL.md before every commit.
+# .agents/skills/prompt-history/ is the canonical source of truth.
+# Mirror SKILL.md and references/ to .claude/skills/prompt-history/ before every commit.
 
-CANONICAL=".agents/skills/pmtx/SKILL.md"
-MIRROR=".claude/skills/pmtx/SKILL.md"
+CANONICAL_DIR=".agents/skills/prompt-history"
+MIRROR_DIR=".claude/skills/prompt-history"
 
-if [ -f "$CANONICAL" ]; then
-    cp "$CANONICAL" "$MIRROR"
-    git add "$MIRROR"
+if [ -d "$CANONICAL_DIR" ]; then
+    cp "$CANONICAL_DIR/SKILL.md" "$MIRROR_DIR/SKILL.md"
+    cp -r "$CANONICAL_DIR/references/" "$MIRROR_DIR/references/"
+    git add "$MIRROR_DIR/SKILL.md" "$MIRROR_DIR/references/"
 fi

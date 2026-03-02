@@ -1,7 +1,7 @@
 ---
 name: prompt-history
 description: Extract AI prompt history for pull requests using PromptEx (pmtx). Use when the user says "extract prompts", "extract my prompts", "extract prompts from last commit", "extract prompts from branch", "generate prompt history", "add my prompts to the PR", "what prompts should I include?", "generate prompt summary", "extract my session", or "show my AI reasoning". Also use at session start to verify tool support.
-compatibility: Requires pmtx binary installed. Run `cargo install --path .` from the promptex repo, or see README for other install options.
+compatibility: Requires pmtx binary installed. Run `cargo install --path .` from https://github.com/gutierrezje/promptex or see the README for other install options.
 metadata:
   author: gutierrezje
   version: 1.0.0
