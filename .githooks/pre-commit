@@ -1,8 +1,8 @@
 #!/bin/sh
-# .agents/skills/prompt-history/ is the canonical source of truth.
+# skills/prompt-history/ is the canonical source of truth.
 # Mirror SKILL.md and references/ to .claude/skills/prompt-history/ before every commit.
 
-CANONICAL_DIR=".agents/skills/prompt-history"
+CANONICAL_DIR="skills/prompt-history"
 MIRROR_DIR=".claude/skills/prompt-history"
 
 if [ -d "$CANONICAL_DIR" ]; then

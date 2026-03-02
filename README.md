@@ -9,7 +9,11 @@ PromptEx (`pmtx`) reads prompts directly from AI coding tool logs, correlates th
 ## Quick Start
 
 ```bash
-# Install
+# Install (Apple Silicon)
+curl -L https://github.com/gutierrezje/promptex/releases/latest/download/pmtx-aarch64-apple-darwin.tar.gz | tar -xz
+mv pmtx /usr/local/bin/
+
+# Or build from source
 cargo install --path .
 
 # Work with your AI agent normally (pmtx reads logs automatically)
@@ -25,11 +29,7 @@ git checkout -b feature/auth-fix
 The agent skill handles the full workflow. Install it once:
 
 ```bash
-# In the promptex repo (dogfooding)
-# Already installed at .agents/skills/prompt-history/
-
-# For any other project (via npx):
-npx skills add promptex/prompt-history
+npx skills add gutierrezje/promptex
 ```
 
 ## How It Works
@@ -100,7 +100,7 @@ cargo test
 ./target/debug/pmtx --help
 ```
 
-After cloning, activate the pre-commit hook (keeps `.claude/skills/` in sync with `.agents/skills/`):
+After cloning, activate the pre-commit hook (keeps `.claude/skills/` in sync with `skills/`):
 
 ```bash
 git config core.hooksPath .githooks
