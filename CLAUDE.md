@@ -19,10 +19,10 @@ This is a Rust CLI that:
 
 ## Skill Files
 The `prompt-history` skill ships in two locations:
-- **`.agents/skills/prompt-history/`** — canonical version, committed to the repo, distributed via `npx skills add`
+- **`skills/prompt-history/`** — canonical version, committed to the repo, distributed via `npx skills add`
 - **`.claude/skills/prompt-history/`** — local copy for Claude Code dogfooding
 
-Always edit `.agents/skills/prompt-history/` first, then sync to `.claude/skills/prompt-history/`. Never edit the `.claude` copy directly — it will be overwritten on the next sync.
+Always edit `skills/prompt-history/` first, then sync to `.claude/skills/prompt-history/`. Never edit the `.claude` copy directly — it will be overwritten on the next sync.
 
 ## Runtime & Build System
 Always use **cargo** for Rust development.
