@@ -1,6 +1,6 @@
 ---
 name: prompt-history
-description: Extract AI prompt history for pull requests using PromptEx (pmtx). Use when the user says "extract prompts", "extract my prompts", "extract prompts from last commit", "extract prompts from branch", "generate prompt history", "add my prompts to the PR", "what prompts should I include?", "generate prompt summary", "extract my session", or "show my AI reasoning". Also use at session start to verify tool support.
+description: Extracts and curates AI prompt history into PR-ready markdown using PromptEx (pmtx). Reads AI tool session logs, correlates prompts to git scope, and renders categorized output for pull request descriptions. Use when the user asks about prompt history, wants to document their AI-assisted reasoning for a PR, or asks to extract or summarize their session.
 compatibility: Requires pmtx binary installed. Run `cargo install --path .` from https://github.com/gutierrezje/promptex or see the README for other install options.
 metadata:
   author: gutierrezje
@@ -73,7 +73,7 @@ When in doubt, keep the entry. The user can always trim.
 
 Follow `references/rendering-rules.md` for the full format spec, example output, and per-field rules.
 
-After rendering in chat, write the markdown to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` and open it:
+After rendering in chat, generate a timestamp and write the markdown to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` using your file-writing tool rather than shell heredocs. Then open it:
 
 ```bash
 pmtx status   # find the project ID
