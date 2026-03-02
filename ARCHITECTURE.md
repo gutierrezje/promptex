@@ -25,15 +25,13 @@ AI-assisted OSS contributions carry invisible reasoning. A maintainer sees the c
 │                               │                                 │
 │                          Correlation  ◄── Scope Files           │
 │                               │                                 │
-│                          Curation                               │
-│                           ├── Artifact filter                   │
-│                           └── Jaccard dedup                     │
-│                               │                                 │
 │                          JSON Output ──────────────────────────►│
 └─────────────────────────────────────────────────────────────────┘
                                                                   │
                                                                   ▼
                                                           Agent (Claude)
+                                                               │
+                                                     Noise filtering + Dedup
                                                                │
                                                      Semantic Categorization
                                                                │
@@ -116,15 +114,9 @@ Raw entries are filtered down to those *relevant to the scope*. An entry passes 
 
 This prevents unrelated work from the same session leaking into the output.
 
-### 5. Curation (`src/curation/`)
+### 5. Redaction (`src/curation/redact.rs`)
 
-Two passes clean up the correlated entries:
-
-**Artifact filter** (`filter.rs`): Drops entries with no concrete output — no tool calls and no files touched. These are pure "thinking out loud" turns that add noise without adding context for a reviewer.
-
-**Jaccard deduplication** (`filter.rs`): Collapses near-identical prompts into one, keeping the most recent version. Users often rephrase a prompt after an unsatisfying response. Jaccard similarity on word tokens catches these clusters at a threshold of 0.80. Short prompts (< 8 words) are exempt — "yes" twice means two distinct approval moments.
-
-**Redaction** (`redact.rs`): Strips secrets, API tokens, and email addresses from prompt text before any output.
+Strips secrets, API tokens, and email addresses from prompt text before any output. Runs in-process before JSON serialization — nothing leaves the binary unredacted.
 
 ### 6. Output (`src/output/`)
 
@@ -152,11 +144,11 @@ This is the key architectural decision: **pmtx handles deterministic work; the a
 
 | pmtx (deterministic) | Agent (semantic) |
 |----------------------|------------------|
-| Time window math | Categorization (Investigation / Solution / Testing) |
-| File overlap correlation | Deciding what's noise |
-| Jaccard deduplication | Rendering judgment calls |
-| Secret redaction | Writing the markdown file |
-| Git shell-outs | |
+| Time window math | Noise filtering (artifact, meta-prompts) |
+| File overlap correlation | Near-duplicate detection |
+| Secret redaction | Categorization (Investigation / Solution / Testing) |
+| Git shell-outs | Rendering judgment calls |
+| | Writing the markdown file |
 
 Rule-based categorization was tried and abandoned. Categories like "Investigation" vs "Solution" depend on intent — "look at auth.rs" could be either, depending on whether a fix followed. A language model reading the prompt text and `assistant_context` makes these calls more reliably than keyword matching.
 
@@ -184,7 +176,6 @@ src/
 │   ├── codex.rs              Codex CLI/Desktop JSONL reader
 │   └── opencode.rs           Disabled (SQLite migration needed)
 ├── curation/
-│   ├── filter.rs             Artifact filter + Jaccard dedup
 │   └── redact.rs             Secret/token/email redaction
 ├── output/
 │   └── json_format.rs        JSON envelope serialization
