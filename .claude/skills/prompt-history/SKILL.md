@@ -63,9 +63,11 @@ Assign each entry to the most fitting section:
 
 **Short replies with `assistant_context`**: when an entry's prompt is short (a bare "yes", "go ahead", "looks good"), the `assistant_context` field contains the tail of the preceding assistant turn — the proposal or question that was being approved. Use it to categorize correctly. For example, "yes" with `assistant_context: "Should I refactor the auth module to use JWT?"` is a Solution approval, not noise.
 
-**Noise entries to drop** (in addition to what pmtx already filtered):
+**Noise entries to drop:**
+- Prompts invoking pmtx itself or asking to extract/summarize prompt history — these are meta, not development work (e.g. "extract my prompts", "add my prompts to the PR", the skill invocation turn)
+- Entries with no tool calls and no files touched, unless the prompt shows significant deliberation — architectural questions, design tradeoffs, or reasoning that visibly shaped what came next are worth keeping even without artifacts
+- Near-duplicate prompts (semantically the same ask, rephrased slightly) — keep the most recent version, which is usually the more refined one
 - Short replies with no `assistant_context` and no meaningful tool calls
-- Prompts that are purely clarifying questions with no implementation output
 
 When in doubt, keep the entry. The user can always trim.
 

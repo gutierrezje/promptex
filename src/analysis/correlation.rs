@@ -3,7 +3,6 @@
 //! The pipeline is:
 //!   1. `build_git_context` — resolve the scope once into files + time window
 //!   2. `filter_by_scope`   — keep entries that touch scoped files or fall in the window
-//!   3. `has_artifact`      — used by curation to drop "thinking out loud" entries
 
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
@@ -136,7 +135,7 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
 /// 1. It touched at least one file that is in scope.
 /// 2. Its timestamp falls within `[ctx.since, ctx.until]`.
 ///
-/// The OR-union is intentionally generous — Phase 7 curation handles
+/// The OR-union is intentionally generous — agent-side curation handles
 /// further trimming. Over-including is safer than losing context.
 pub fn filter_by_scope(entries: &[JournalEntry], ctx: &GitContext) -> Vec<JournalEntry> {
     entries
@@ -144,14 +143,6 @@ pub fn filter_by_scope(entries: &[JournalEntry], ctx: &GitContext) -> Vec<Journa
         .filter(|e| in_time_window(e, ctx) || touches_scope_file(e, ctx))
         .cloned()
         .collect()
-}
-
-/// Return true if the entry has a concrete artifact (file edits, commands, etc.).
-///
-/// Used during curation (Phase 7) to drop "thinking out loud" prompts that
-/// generated no observable work product.
-pub fn has_artifact(entry: &JournalEntry) -> bool {
-    !entry.tool_calls.is_empty() || !entry.files_touched.is_empty()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -219,26 +210,6 @@ mod tests {
     // Fixed reference point: 2024-01-15 12:00:00 UTC
     fn t(h: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap() + Duration::hours(h)
-    }
-
-    // ── has_artifact ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_has_artifact_with_tool_calls() {
-        let e = make_entry(t(0), &[], &["Edit"]);
-        assert!(has_artifact(&e));
-    }
-
-    #[test]
-    fn test_has_artifact_with_files() {
-        let e = make_entry(t(0), &["src/main.rs"], &[]);
-        assert!(has_artifact(&e));
-    }
-
-    #[test]
-    fn test_has_artifact_empty() {
-        let e = make_entry(t(0), &[], &[]);
-        assert!(!has_artifact(&e));
     }
 
     // ── filter_by_scope — time window ─────────────────────────────────────────

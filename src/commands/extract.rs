@@ -4,7 +4,6 @@ use anyhow::Result;
 
 use crate::analysis::correlation::{build_git_context, filter_by_scope};
 use crate::analysis::scope::{determine_scope, ExtractionScope, ScopeFlags};
-use crate::curation::filter::{apply_artifact_filter, remove_duplicates};
 use crate::extractors;
 use crate::output::json_format;
 use crate::project_id;
@@ -18,7 +17,7 @@ pub fn execute(
 ) -> Result<()> {
     let cwd = env::current_dir()?;
 
-    // ── Step 1: Determine scope ───────────────────────────────────────────────
+    // ── Determine scope ───────────────────────────────────────────────────────
     let flags = ScopeFlags {
         uncommitted,
         commits,
@@ -50,7 +49,7 @@ pub fn execute(
         }
     }
 
-    // ── Step 2: Resolve scope into files + time window ────────────────────────
+    // ── Resolve scope into files + time window ────────────────────────────────
     let ctx = build_git_context(&scope)?;
     eprintln!(
         "  ✓ Time range: {} → {}",
@@ -64,7 +63,7 @@ pub fn execute(
         eprintln!("  ✓ {} file(s) in scope", ctx.scope_files.len());
     }
 
-    // ── Step 3: Detect extractors and pull raw entries ────────────────────────
+    // ── Detect extractors and pull raw entries ────────────────────────────────
     let pid = project_id::get_project_id(&cwd)?;
     let extractor = extractors::detect(&cwd, &pid);
     let kind_label = extractor
@@ -82,13 +81,9 @@ pub fn execute(
     }
     eprintln!("  ✓ {} total in time range", raw_entries.len());
 
-    // ── Step 4: Correlate — filter to scope (Phase 6) ─────────────────────────
+    // ── Correlate — filter to scope ───────────────────────────────────────────
     let entries = filter_by_scope(&raw_entries, &ctx);
     eprintln!("  ✓ Filtered to {} relevant entries", entries.len());
-
-    // ── Step 5: Curate — artifact filter + deduplication (Phase 7) ───────────
-    let entries = apply_artifact_filter(entries);
-    let entries = remove_duplicates(entries);
 
     if entries.is_empty() {
         eprintln!("\nNo prompts found for this scope.");
@@ -96,7 +91,7 @@ pub fn execute(
         return Ok(());
     }
 
-    // ── Step 6: Emit structured JSON for agent-side categorization ────────────
+    // ── Emit structured JSON for agent-side categorization ───────────────────
     let out = json_format::render_json(&entries, &ctx, &scope)?;
     println!("{out}");
 
