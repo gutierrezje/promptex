@@ -39,11 +39,10 @@ npx skills add gutierrezje/promptex
    - Codex CLI / Desktop app: `~/.codex/sessions/YYYY/MM/DD/*.jsonl`
    - OpenCode, Cursor, GitHub Copilot: planned
 2. **Smart scoping**: Analyzes git state to determine relevant range — feature branch lifetime, last N commits, uncommitted changes, or a time window
-3. **Correlation**: Matches extracted entries to files and commits in scope (time window + file overlap)
-4. **Correlation**: Filters entries to those relevant to the scope (time window + file overlap)
-5. **JSON output**: Emits structured data including entries, git context, and a rendering spec — the agent categorizes semantically and writes the final markdown
-6. **Privacy-first**: Redacts secrets, tokens, and email addresses from prompt text before any output
-7. **Home directory storage**: All state in `~/.promptex/` — no project directory pollution
+3. **Correlation**: Filters entries to those relevant to the scope (time window + file overlap)
+4. **JSON output**: Emits structured data including entries and git context — the agent categorizes semantically and writes the final markdown
+5. **Privacy-first**: Redacts secrets, tokens, and email addresses from prompt text before any output
+6. **Home directory storage**: All state in `~/.promptex/` — no project directory pollution
 
 ## Commands
 

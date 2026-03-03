@@ -16,7 +16,7 @@ AI-assisted OSS contributions carry invisible reasoning. A maintainer sees the c
 ┌─────────────────────────────────────────────────────────────────┐
 │                         pmtx extract                            │
 │                                                                 │
-│  Git State ──► Scope ──► Time Window                           │
+│  Git State ──► Scope ──► Time Window                            │
 │                               │                                 │
 │  AI Tool Logs ────────────────┤                                 │
 │   ~/.claude/...               │                                 │
@@ -30,11 +30,11 @@ AI-assisted OSS contributions carry invisible reasoning. A maintainer sees the c
                                                                   │
                                                                   ▼
                                                           Agent (Claude)
-                                                               │
+                                                                  │
                                                      Noise filtering + Dedup
-                                                               │
+                                                                  │
                                                      Semantic Categorization
-                                                               │
+                                                                  │
                                                           PR Markdown
 ```
 
@@ -129,12 +129,11 @@ Strips secrets, API tokens, and email addresses from prompt text before any outp
   "until": "...",
   "commits": [{ "short_hash": "abc1234", "message": "..." }],
   "scope_files": ["src/auth.rs", "src/lib.rs"],
-  "entries": [ /* curated JournalEntry objects */ ],
-  "format_spec": { /* rendering instructions for the agent */ }
+  "entries": [ /* curated JournalEntry objects */ ]
 }
 ```
 
-The `format_spec` field embeds the rendering contract — category names, entry format, header/footer templates — so the agent doesn't need to be told separately how to render.
+The agent receives this envelope and handles noise filtering, deduplication, semantic categorization, and rendering — guided by the skill's `references/rendering-rules.md`.
 
 ---
 
