@@ -83,6 +83,78 @@ const SHORT_PROMPT_WORD_THRESHOLD: usize = 8;
 /// Max characters to store from the preceding assistant turn.
 const MAX_CONTEXT_CHARS: usize = 300;
 
+/// XML-tag prefixes that identify system-injected user turns, not real prompts.
+///
+/// Claude Code injects these into the conversation as `user` role messages, but
+/// they are never authored by the human and should not appear in prompt history.
+const JUNK_PREFIXES: &[&str] = &[
+    "<command-name>",
+    "<local-command-stdout>",
+    "<local-command-caveat>",
+    "<task-notification>",
+    "<system-reminder>",
+    "<command-message>",
+];
+
+/// Strip any leading junk XML blocks from `text` and return the remainder.
+///
+/// Some tags (e.g. `<system-reminder>`) are prepended as headers to real user
+/// prompts by Claude Code's injection machinery. After stripping them the
+/// actual human text remains. Returns `""` when no real content is left
+/// (i.e., the turn is pure junk with no following human text).
+fn strip_junk_prefixes(mut text: &str) -> &str {
+    'outer: loop {
+        let t = text.trim();
+        for &prefix in JUNK_PREFIXES {
+            if t.starts_with(prefix) {
+                let tag_name = &prefix[1..prefix.len() - 1]; // "<foo>" → "foo"
+                let close_tag = format!("</{tag_name}>");
+                match t.find(close_tag.as_str()) {
+                    Some(pos) => {
+                        text = t[pos + close_tag.len()..].trim();
+                        continue 'outer;
+                    }
+                    None => return "", // malformed / no closing tag — pure junk
+                }
+            }
+        }
+        break;
+    }
+    text.trim()
+}
+
+/// Plain-text prefix that marks a Claude Code session continuation summary.
+/// These are injected by the runtime — not authored by the human.
+const CONTINUATION_PREFIX: &str = "This session is being continued from a previous conversation";
+
+/// Normalize raw user text: strip XML junk blocks, drop session continuations,
+/// and compact skill invocations to a short readable label.
+///
+/// Returns `None` if the turn contains no real human content.
+fn normalize_user_text(raw: &str) -> Option<String> {
+    let text = strip_junk_prefixes(raw.trim());
+
+    if text.is_empty() {
+        return None;
+    }
+
+    // Session continuation summaries are injected by Claude Code — not real prompts.
+    if text.starts_with(CONTINUATION_PREFIX) {
+        return None;
+    }
+
+    // Skill invocations inject a full skill-context blob as a plain text block:
+    //   "Base directory for this skill: /path/to/skill-name\n\n# Skill Title..."
+    // Compact it to a short label so it doesn't pollute the prompt field.
+    if let Some(rest) = text.strip_prefix("Base directory for this skill:") {
+        let path = rest.lines().next().unwrap_or("").trim();
+        let skill_name = path.split('/').next_back().unwrap_or("unknown");
+        return Some(format!("Skill invocation: {skill_name}"));
+    }
+
+    Some(text.to_string())
+}
+
 // ── Session parsing ───────────────────────────────────────────────────────────
 
 /// A raw message line from a Claude Code JSONL session file.
@@ -178,14 +250,7 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
     let content = body.content.as_ref()?;
 
     match content {
-        Value::String(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        }
+        Value::String(s) => normalize_user_text(s),
         Value::Array(parts) => {
             // Concatenate all text-type content blocks
             let text: String = parts
@@ -200,11 +265,7 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            if text.is_empty() {
-                None
-            } else {
-                Some(text)
-            }
+            normalize_user_text(&text)
         }
         _ => None,
     }
@@ -358,5 +419,53 @@ mod tests {
         assert_eq!(normalize_tool_name("bash"), "Bash");
         assert_eq!(normalize_tool_name("str_replace_based_edit_tool"), "Edit");
         assert_eq!(normalize_tool_name("read_file"), "Read");
+    }
+
+    #[test]
+    fn test_strip_junk_drops_standalone_junk() {
+        // Pure junk tags with no trailing human text → empty
+        assert_eq!(
+            strip_junk_prefixes("<command-name>/exit</command-name>"),
+            ""
+        );
+        assert_eq!(
+            strip_junk_prefixes("<local-command-stdout>Catch you later!</local-command-stdout>"),
+            ""
+        );
+        assert_eq!(
+            strip_junk_prefixes("<task-notification>task done</task-notification>"),
+            ""
+        );
+    }
+
+    #[test]
+    fn test_strip_junk_preserves_real_prompt_after_system_reminder() {
+        let input =
+            "<system-reminder>\nsome injected context\n</system-reminder>\n\nfix the auth bug";
+        assert_eq!(strip_junk_prefixes(input), "fix the auth bug");
+    }
+
+    #[test]
+    fn test_strip_junk_passthrough_real_prompts() {
+        assert_eq!(
+            strip_junk_prefixes("fix the authentication bug"),
+            "fix the authentication bug"
+        );
+        assert_eq!(strip_junk_prefixes(""), "");
+    }
+
+    #[test]
+    fn test_normalize_drops_session_continuation() {
+        let input = "This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:\n...";
+        assert_eq!(normalize_user_text(input), None);
+    }
+
+    #[test]
+    fn test_normalize_compacts_skill_invocation() {
+        let input = "Base directory for this skill: /Users/alice/.claude/skills/prompt-history\n\n# PromptEx — full skill context...";
+        assert_eq!(
+            normalize_user_text(input),
+            Some("Skill invocation: prompt-history".to_string())
+        );
     }
 }

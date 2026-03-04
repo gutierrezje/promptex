@@ -129,7 +129,7 @@ Strips secrets, API tokens, and email addresses from prompt text before any outp
   "until": "...",
   "commits": [{ "short_hash": "abc1234", "message": "..." }],
   "scope_files": ["src/auth.rs", "src/lib.rs"],
-  "entries": [ /* curated JournalEntry objects */ ]
+  "entries": [ /* curated PromptEntry objects */ ]
 }
 ```
 
