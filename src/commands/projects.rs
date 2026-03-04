@@ -97,7 +97,7 @@ fn list() -> Result<()> {
                 s
             }
         };
-        println!("   Journal: {dir_str}/");
+        println!("   Storage: {dir_str}/");
         println!("   Extractions: {}", p.extractions);
         if let Some(ts) = p.last_ts {
             println!("   Last entry: {}", format_relative(ts));

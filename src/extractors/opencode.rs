@@ -24,7 +24,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use super::traits::PromptExtractor;
-use crate::journal::JournalEntry;
+use crate::prompt::PromptEntry;
 
 pub struct OpenCodeExtractor {
     message_dir: PathBuf,
@@ -64,7 +64,7 @@ impl PromptExtractor for OpenCodeExtractor {
         Self::default_message_dir().is_some()
     }
 
-    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<JournalEntry>> {
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<PromptEntry>> {
         let mut entries = Vec::new();
 
         let mut files: Vec<PathBuf> = fs::read_dir(&self.message_dir)
@@ -106,7 +106,7 @@ impl PromptExtractor for OpenCodeExtractor {
                 if let Some(text) = extract_text_from_parts(msg.parts.as_deref()) {
                     let (tool_calls, files_touched) = collect_next_assistant(&messages, i + 1);
 
-                    let entry = JournalEntry::new(
+                    let entry = PromptEntry::new(
                         "unknown".to_string(), // OpenCode doesn't embed git branch in messages
                         String::new(),
                         text,
@@ -199,7 +199,7 @@ fn collect_next_assistant(
     (tool_calls, files_touched)
 }
 
-fn with_timestamp(mut entry: JournalEntry, ts: DateTime<Utc>) -> JournalEntry {
+fn with_timestamp(mut entry: PromptEntry, ts: DateTime<Utc>) -> PromptEntry {
     entry.timestamp = ts;
     entry
 }

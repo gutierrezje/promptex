@@ -17,7 +17,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::traits::PromptExtractor;
-use crate::journal::JournalEntry;
+use crate::prompt::PromptEntry;
 
 pub struct ClaudeCodeExtractor {
     /// The ~/.claude/projects/{slug}/ directory for this project.
@@ -54,7 +54,7 @@ impl PromptExtractor for ClaudeCodeExtractor {
         Self::log_dir_for(project_root).is_some()
     }
 
-    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<JournalEntry>> {
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<PromptEntry>> {
         let mut entries = Vec::new();
 
         // Collect all *.jsonl files in the project log dir
@@ -106,7 +106,7 @@ fn extract_from_session(
     path: &Path,
     since: DateTime<Utc>,
     until: DateTime<Utc>,
-) -> Result<Vec<JournalEntry>> {
+) -> Result<Vec<PromptEntry>> {
     let file = File::open(path).context("Failed to open session file")?;
     let reader = BufReader::new(file);
 
@@ -142,7 +142,7 @@ fn extract_from_session(
                         let (tool_calls, files_touched) =
                             collect_assistant_context(&raw_messages, i + 1);
 
-                        let mut entry = JournalEntry::new(
+                        let mut entry = PromptEntry::new(
                             branch,
                             String::new(), // commit hash not in logs; filled by correlation
                             prompt_text.clone(),
@@ -338,7 +338,7 @@ fn extract_file_from_tool(tool_name: &str, input: Option<&Value>) -> Option<Stri
 }
 
 /// Return a copy of `entry` with its timestamp overridden.
-fn with_timestamp(mut entry: JournalEntry, ts: DateTime<Utc>) -> JournalEntry {
+fn with_timestamp(mut entry: PromptEntry, ts: DateTime<Utc>) -> PromptEntry {
     entry.timestamp = ts;
     entry
 }

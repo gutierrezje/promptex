@@ -1,4 +1,4 @@
-//! Correlation — match extracted journal entries to the current git scope.
+//! Correlation — match extracted prompt entries to the current git scope.
 //!
 //! The pipeline is:
 //!   1. `build_git_context` — resolve the scope once into files + time window
@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::analysis::git::{self, Commit};
 use crate::analysis::scope::ExtractionScope;
-use crate::journal::JournalEntry;
+use crate::prompt::PromptEntry;
 
 // ── GitContext ─────────────────────────────────────────────────────────────────
 
@@ -129,7 +129,7 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
     }
 }
 
-/// Filter journal entries to those relevant to the given git context.
+/// Filter prompt entries to those relevant to the given git context.
 ///
 /// An entry is **kept** if either condition is true:
 /// 1. It touched at least one file that is in scope.
@@ -137,7 +137,7 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
 ///
 /// The OR-union is intentionally generous — agent-side curation handles
 /// further trimming. Over-including is safer than losing context.
-pub fn filter_by_scope(entries: &[JournalEntry], ctx: &GitContext) -> Vec<JournalEntry> {
+pub fn filter_by_scope(entries: &[PromptEntry], ctx: &GitContext) -> Vec<PromptEntry> {
     entries
         .iter()
         .filter(|e| in_time_window(e, ctx) || touches_scope_file(e, ctx))
@@ -147,11 +147,11 @@ pub fn filter_by_scope(entries: &[JournalEntry], ctx: &GitContext) -> Vec<Journa
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn in_time_window(entry: &JournalEntry, ctx: &GitContext) -> bool {
+fn in_time_window(entry: &PromptEntry, ctx: &GitContext) -> bool {
     entry.timestamp >= ctx.since && entry.timestamp <= ctx.until
 }
 
-fn touches_scope_file(entry: &JournalEntry, ctx: &GitContext) -> bool {
+fn touches_scope_file(entry: &PromptEntry, ctx: &GitContext) -> bool {
     entry
         .files_touched
         .iter()
@@ -183,8 +183,8 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
-    fn make_entry(ts: DateTime<Utc>, files: &[&str], tool_calls: &[&str]) -> JournalEntry {
-        JournalEntry {
+    fn make_entry(ts: DateTime<Utc>, files: &[&str], tool_calls: &[&str]) -> PromptEntry {
+        PromptEntry {
             timestamp: ts,
             branch: "feature/test".to_string(),
             commit: "abc1234".to_string(),

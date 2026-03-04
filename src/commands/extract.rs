@@ -70,7 +70,7 @@ pub fn execute(
         .primary_kind()
         .map(|k| k.label())
         .unwrap_or("none");
-    eprintln!("\n🔎 Loading journals ({kind_label})...");
+    eprintln!("\n🔎 Loading prompts ({kind_label})...");
 
     let (contributing, raw_entries) = extractor.extract_all(ctx.since, ctx.until)?;
     for (kind, count) in &contributing {

@@ -30,7 +30,7 @@ pub fn execute() -> Result<()> {
 
     println!("Project: {id}");
     println!("Branch:  {branch_label}");
-    println!("Journal: {display_dir}/");
+    println!("Storage: {display_dir}/");
 
     let extractions: Vec<_> = std::fs::read_dir(&project_dir)
         .map(|rd| {

@@ -1,11 +1,11 @@
-//! Journal entry structure shared across all extractors.
+//! Prompt entry structure shared across all extractors.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// A single journal entry representing one prompt and its context.
+/// A single extracted prompt and its surrounding context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JournalEntry {
+pub struct PromptEntry {
     /// When this prompt was issued (ISO-8601)
     pub timestamp: DateTime<Utc>,
 
@@ -42,7 +42,7 @@ pub struct JournalEntry {
     pub assistant_context: Option<String>,
 }
 
-impl JournalEntry {
+impl PromptEntry {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         branch: String,
@@ -74,8 +74,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_journal_entry_roundtrip() {
-        let entry = JournalEntry::new(
+    fn test_prompt_entry_roundtrip() {
+        let entry = PromptEntry::new(
             "feature/auth".to_string(),
             "abc123".to_string(),
             "implement JWT validation".to_string(),
@@ -87,7 +87,7 @@ mod tests {
         );
 
         let json = serde_json::to_string(&entry).unwrap();
-        let parsed: JournalEntry = serde_json::from_str(&json).unwrap();
+        let parsed: PromptEntry = serde_json::from_str(&json).unwrap();
 
         assert_eq!(entry.branch, parsed.branch);
         assert_eq!(entry.prompt, parsed.prompt);

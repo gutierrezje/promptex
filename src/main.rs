@@ -5,9 +5,9 @@ mod analysis;
 mod commands;
 mod curation;
 mod extractors;
-mod journal;
 mod output;
 mod project_id;
+mod prompt;
 
 #[derive(Parser)]
 #[command(name = "pmtx")]
@@ -46,7 +46,7 @@ enum Commands {
     /// Check if your AI tool is natively supported (exit 0 = yes, exit 1 = unsupported)
     Check,
 
-    /// Show current project journal status
+    /// Show current project prompt extraction status
     Status,
 
     /// Manage tracked projects

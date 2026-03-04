@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::analysis::correlation::GitContext;
 use crate::analysis::scope::ExtractionScope;
-use crate::journal::JournalEntry;
+use crate::prompt::PromptEntry;
 
 /// Top-level JSON envelope emitted by `pmtx extract`.
 #[derive(Serialize)]
@@ -20,7 +20,7 @@ struct JsonOutput<'a> {
     until: DateTime<Utc>,
     commits: Vec<CommitSummary>,
     scope_files: &'a [String],
-    entries: &'a [JournalEntry],
+    entries: &'a [PromptEntry],
 }
 
 #[derive(Serialize)]
@@ -31,7 +31,7 @@ struct CommitSummary {
 
 /// Serialize correlated entries to JSON for agent-side processing.
 pub fn render_json(
-    entries: &[JournalEntry],
+    entries: &[PromptEntry],
     ctx: &GitContext,
     scope: &ExtractionScope,
 ) -> anyhow::Result<String> {

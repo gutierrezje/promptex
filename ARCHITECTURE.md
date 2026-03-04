@@ -87,10 +87,10 @@ Each supported AI tool has a dedicated extractor that reads its native log forma
 - JSONL with `session_meta` on line 0, then `event_msg` (user messages) and `response_item` (tool calls) events
 - Timestamps extracted per-message from `event_msg` payloads — not from session metadata alone
 
-All extractors produce a common `JournalEntry`:
+All extractors produce a common `PromptEntry`:
 
 ```
-JournalEntry {
+PromptEntry {
     timestamp: DateTime<Utc>,
     branch: String,
     commit: String,
@@ -165,6 +165,7 @@ All state lives in `~/.promptex/projects/{id}/` — never in the project directo
 src/
 ├── main.rs                   Entry point, clap command dispatch
 ├── project_id.rs             Derive project ID from git remote
+├── prompt.rs                 PromptEntry — shared data type produced by extractors
 ├── analysis/
 │   ├── scope.rs              ExtractionScope enum + determine_scope()
 │   ├── git.rs                Git shell-outs (branch, commits, files)
@@ -181,7 +182,7 @@ src/
 └── commands/
     ├── extract.rs            Full pipeline orchestration
     ├── check.rs              Tool support detection
-    ├── status.rs             Project/journal stats
+    ├── status.rs             Project/prompt stats
     └── projects.rs           List + remove projects
 ```
 

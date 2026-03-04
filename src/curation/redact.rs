@@ -1,4 +1,4 @@
-//! Privacy-first redaction of sensitive values before journal writes.
+//! Privacy-first redaction of sensitive values from prompt text.
 //!
 //! Patterns are applied in order. Each match is replaced with a
 //! `[REDACTED:<kind>]` placeholder so the prompt remains readable

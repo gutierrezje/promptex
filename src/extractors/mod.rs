@@ -24,13 +24,13 @@ use chrono::{DateTime, Utc};
 use std::path::Path;
 
 use crate::curation::redact::redact;
-use crate::journal::JournalEntry;
+use crate::prompt::PromptEntry;
 use claude_code::ClaudeCodeExtractor;
 use codex::CodexExtractor;
 use traits::PromptExtractor;
 
-type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<Vec<JournalEntry>>>;
-type ExtractResult = Result<(Vec<(ExtractorKind, usize)>, Vec<JournalEntry>)>;
+type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<Vec<PromptEntry>>>;
+type ExtractResult = Result<(Vec<(ExtractorKind, usize)>, Vec<PromptEntry>)>;
 
 /// Which extractor was selected and is in use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +59,7 @@ impl ActiveExtractor {
     /// Returns a list of which sources contributed entries (for diagnostics)
     /// alongside the merged, redacted entries.
     pub fn extract_all(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> ExtractResult {
-        let mut all_entries: Vec<JournalEntry> = Vec::new();
+        let mut all_entries: Vec<PromptEntry> = Vec::new();
         let mut contributing: Vec<(ExtractorKind, usize)> = Vec::new();
 
         for (kind, extractor) in &self.sources {
@@ -82,7 +82,7 @@ impl ActiveExtractor {
 }
 
 /// Apply redaction to the prompt field of every entry.
-fn redact_entries(entries: Vec<JournalEntry>) -> Vec<JournalEntry> {
+fn redact_entries(entries: Vec<PromptEntry>) -> Vec<PromptEntry> {
     entries
         .into_iter()
         .map(|mut e| {
@@ -125,8 +125,8 @@ mod tests {
     use super::*;
     use chrono::{Duration, TimeZone};
 
-    fn sample_entry(prompt: &str) -> JournalEntry {
-        let mut e = JournalEntry::new(
+    fn sample_entry(prompt: &str) -> PromptEntry {
+        let mut e = PromptEntry::new(
             "feature/test".to_string(),
             "abc123".to_string(),
             prompt.to_string(),

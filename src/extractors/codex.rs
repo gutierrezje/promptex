@@ -23,7 +23,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::traits::PromptExtractor;
-use crate::journal::JournalEntry;
+use crate::prompt::PromptEntry;
 
 pub struct CodexExtractor {
     sessions_dir: PathBuf,
@@ -55,7 +55,7 @@ impl PromptExtractor for CodexExtractor {
         Self::default_sessions_dir().is_some()
     }
 
-    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<JournalEntry>> {
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<PromptEntry>> {
         let mut entries = Vec::new();
 
         for file in collect_jsonl_files(&self.sessions_dir) {
@@ -95,7 +95,7 @@ fn extract_from_rollout(
     path: &Path,
     since: DateTime<Utc>,
     until: DateTime<Utc>,
-) -> Result<Vec<JournalEntry>> {
+) -> Result<Vec<PromptEntry>> {
     let file = File::open(path).context("Failed to open Codex session file")?;
     let reader = BufReader::new(file);
 
@@ -137,7 +137,7 @@ fn extract_from_rollout(
 
             let (tool_calls, files_touched) = collect_turn_tools(&lines, i + 1);
 
-            let entry = JournalEntry::new(
+            let entry = PromptEntry::new(
                 "unknown".to_string(), // Codex sessions don't embed the git branch
                 String::new(),
                 prompt,
@@ -536,7 +536,7 @@ fn push_unique(vec: &mut Vec<String>, item: &str) {
     }
 }
 
-fn with_timestamp(mut entry: JournalEntry, ts: DateTime<Utc>) -> JournalEntry {
+fn with_timestamp(mut entry: PromptEntry, ts: DateTime<Utc>) -> PromptEntry {
     entry.timestamp = ts;
     entry
 }
