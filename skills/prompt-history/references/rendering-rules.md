@@ -22,8 +22,6 @@
 **[14:05] (Claude Code · claude-sonnet-4-6)**
 > explain how the JWT validation middleware works
 
-→ Understood token structure and expiry logic
-
 ---
 
 ### 🔧 Solution
@@ -31,7 +29,6 @@
 **[14:23] (Claude Code · claude-sonnet-4-6)**
 > implement JWT expiry checking in src/auth.rs
 
-→ Added validate_expiry() with 5-minute clock skew tolerance
 → Files: `src/auth.rs`, `src/middleware.rs`
 → Commit: `abc1234`
 
@@ -48,9 +45,8 @@
 
 ## Per-field rules
 
-- Use `→` (not `->`) for outcome, files, and commit lines
-- If `assistant_context` is present and its last sentence contains a `?`, add a `→ Re:` line after the blockquote (last sentence, capped at 120 chars): `→ Re: *"Want me to fix pr_format.rs with that approach?"*`. Omit if the context tail is a declarative statement — it adds noise.
-- Omit outcome line if `outcome` field is empty
+- Use `→` (not `->`) for files, commit, and Re: lines
+- If `assistant_context` is present and its last sentence contains a `?`, add a `→ Re:` line after the blockquote (last sentence, capped at 120 chars): `→ Re: *"Want me to fix pr_format.rs with that approach?"*`. Omit if the context tail is a declarative statement — it adds noise. Before extracting the last sentence, strip any lines that consist entirely of backtick/dash separator characters (e.g. `` `─────────────────────────────────────────────────` ``).
 - Omit files line if `files_touched` is empty
 - Omit commit line if `commit` field is empty or not a hex hash ≥ 7 chars
 - Show model in tool line only if `model` field is present: `(Tool · model)`

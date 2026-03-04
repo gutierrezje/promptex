@@ -24,9 +24,6 @@ pub struct PromptEntry {
     /// Tool calls made (e.g., ["Edit", "Bash", "Read"])
     pub tool_calls: Vec<String>,
 
-    /// Brief description of what happened / was accomplished
-    pub outcome: String,
-
     /// Which AI tool was used (e.g., "claude-code", "codex")
     pub tool: String,
 
@@ -34,23 +31,22 @@ pub struct PromptEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
-    /// For short replies (< 8 words): the preceding assistant turn that prompted
-    /// this response. Gives the LLM categorizer enough context to interpret
-    /// bare confirmations like "yes" or "go ahead".
+    /// The tail of the most recent preceding assistant turn. Captured unconditionally
+    /// so the skill can use it for categorization context — especially useful for
+    /// short confirmations ("yes", "go ahead") or hybrid messages that begin with
+    /// approval before adding new context ("yes fix that. also...").
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub assistant_context: Option<String>,
 }
 
 impl PromptEntry {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         branch: String,
         commit: String,
         prompt: String,
         files_touched: Vec<String>,
         tool_calls: Vec<String>,
-        outcome: String,
         tool: String,
         model: Option<String>,
     ) -> Self {
@@ -61,7 +57,6 @@ impl PromptEntry {
             prompt,
             files_touched,
             tool_calls,
-            outcome,
             tool,
             model,
             assistant_context: None,
@@ -81,7 +76,6 @@ mod tests {
             "implement JWT validation".to_string(),
             vec!["src/auth.rs".to_string()],
             vec!["Edit".to_string()],
-            "Added expiry check".to_string(),
             "claude-code".to_string(),
             Some("claude-sonnet-4-6".to_string()),
         );

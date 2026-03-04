@@ -132,7 +132,6 @@ mod tests {
             prompt.to_string(),
             vec!["src/lib.rs".to_string()],
             vec!["Edit".to_string()],
-            "done".to_string(),
             "claude-code".to_string(),
             None,
         );

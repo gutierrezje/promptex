@@ -244,7 +244,6 @@ fn extract_from_session(
                             prompt_text.clone(),
                             files_touched,
                             tool_calls,
-                            String::new(), // outcome inferred during curation
                             "claude-code".to_string(),
                             None,
                         );

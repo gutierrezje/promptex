@@ -97,7 +97,6 @@ PromptEntry {
     prompt: String,           // the user's message text
     files_touched: Vec<String>,
     tool_calls: Vec<String>,  // e.g. ["Edit", "Bash", "Read"]
-    outcome: String,          // summary of what the agent did (if captured)
     tool: String,             // "claude-code" | "codex"
     model: Option<String>,    // model name if present in logs
     assistant_context: Option<String>, // tail of preceding assistant turn
@@ -153,7 +152,7 @@ This is the key architectural decision: **pmtx handles deterministic work; the a
 
 Rule-based categorization was tried and abandoned. Categories like "Investigation" vs "Solution" depend on intent — "look at auth.rs" could be either, depending on whether a fix followed. A language model reading the prompt text and `assistant_context` makes these calls more reliably than keyword matching.
 
-This principle recurs throughout the codebase. `outcome` is left empty by the extractor rather than inferred with heuristics — the agent can derive it from `prompt + tool_calls + files_touched` at render time. `assistant_context` is captured raw and passed through; quality filtering (sentence boundaries, formatting artifacts) belongs to the agent layer, not the Rust extractor. When in doubt: if the problem requires understanding *meaning*, it belongs to the agent.
+This principle recurs throughout the codebase. `assistant_context` is captured raw and passed through; quality filtering (sentence boundaries, formatting artifacts) belongs to the agent layer, not the Rust extractor. When in doubt: if the problem requires understanding *meaning*, it belongs to the agent.
 
 ---
 
