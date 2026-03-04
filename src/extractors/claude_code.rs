@@ -84,8 +84,6 @@ impl PromptExtractor for ClaudeCodeExtractor {
     }
 }
 
-/// Prompts shorter than this are eligible for `assistant_context` capture.
-const SHORT_PROMPT_WORD_THRESHOLD: usize = 8;
 /// Max characters to store from the preceding assistant turn.
 const MAX_CONTEXT_CHARS: usize = 300;
 
@@ -250,10 +248,8 @@ fn extract_from_session(
                             "claude-code".to_string(),
                             None,
                         );
-                        // Capture preceding assistant question for short replies
-                        if prompt_text.split_whitespace().count() < SHORT_PROMPT_WORD_THRESHOLD {
-                            entry.assistant_context = extract_preceding_question(&raw_messages, i);
-                        }
+                        // Always capture preceding assistant context; the skill decides whether to surface it
+                        entry.assistant_context = extract_preceding_context(&raw_messages, i);
                         // Override timestamp with the actual log timestamp
                         entries.push(with_timestamp(entry, ts));
                     }
@@ -326,7 +322,7 @@ fn extract_assistant_text(msg: &RawMessage) -> Option<String> {
 ///
 /// Walking backward stops at the previous user message so we don't pull in
 /// context from an unrelated earlier exchange.
-fn extract_preceding_question(messages: &[RawMessage], before_idx: usize) -> Option<String> {
+fn extract_preceding_context(messages: &[RawMessage], before_idx: usize) -> Option<String> {
     for msg in messages[..before_idx].iter().rev() {
         if msg.msg_type == "user" {
             break;

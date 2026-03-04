@@ -149,7 +149,11 @@ This is the key architectural decision: **pmtx handles deterministic work; the a
 | Git shell-outs | Rendering judgment calls |
 | | Writing the markdown file |
 
+**Guiding principle: prefer LLM over expert systems.** When faced with a classification or quality problem, the instinct to build a heuristic in Rust (word counts, regex filters, fixed taxonomies) should be resisted. The agent handles these more reliably and adapts without code changes.
+
 Rule-based categorization was tried and abandoned. Categories like "Investigation" vs "Solution" depend on intent — "look at auth.rs" could be either, depending on whether a fix followed. A language model reading the prompt text and `assistant_context` makes these calls more reliably than keyword matching.
+
+This principle recurs throughout the codebase. `outcome` is left empty by the extractor rather than inferred with heuristics — the agent can derive it from `prompt + tool_calls + files_touched` at render time. `assistant_context` is captured raw and passed through; quality filtering (sentence boundaries, formatting artifacts) belongs to the agent layer, not the Rust extractor. When in doubt: if the problem requires understanding *meaning*, it belongs to the agent.
 
 ---
 
