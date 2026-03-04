@@ -324,16 +324,44 @@ fn extract_preceding_question(messages: &[RawMessage], before_idx: usize) -> Opt
     None
 }
 
-/// Walk forward from `start` collecting tool names and file paths until the
-/// next user message (i.e., within a single assistant response turn).
+/// Returns `true` if this `user` message is purely an API tool-result acknowledgment,
+/// not a human-authored message.
+///
+/// In Claude Code's strict alternating-turn model every assistant `tool_use` must be
+/// immediately followed by a user `tool_result` before the assistant can act again.
+/// These intermediate turns are internal plumbing — they contain no human content.
+fn is_tool_result_turn(msg: &RawMessage) -> bool {
+    let content = match msg.message.as_ref().and_then(|b| b.content.as_ref()) {
+        Some(c) => c,
+        None => return false,
+    };
+    match content {
+        Value::Array(parts) => {
+            !parts.is_empty()
+                && parts
+                    .iter()
+                    .all(|p| p.get("type").and_then(|v| v.as_str()) == Some("tool_result"))
+        }
+        _ => false,
+    }
+}
+
+/// Walk forward from `start` collecting tool names and file paths from all
+/// assistant turns belonging to this prompt's agentic response.
+///
+/// Skips over `tool_result` user turns (API plumbing) and stops only when a
+/// real human message is encountered — allowing the full tool call chain from
+/// multi-step agentic sessions to be captured.
 fn collect_assistant_context(messages: &[RawMessage], start: usize) -> (Vec<String>, Vec<String>) {
     let mut tool_calls = Vec::new();
     let mut files_touched = Vec::new();
 
     for msg in messages[start..].iter() {
-        // Stop at the next user turn
         if msg.msg_type == "user" {
-            break;
+            if is_tool_result_turn(msg) {
+                continue; // API plumbing — skip and keep walking
+            }
+            break; // real human message — stop collecting
         }
 
         if msg.msg_type != "assistant" {
@@ -388,11 +416,19 @@ fn normalize_tool_name(raw: &str) -> String {
 fn extract_file_from_tool(tool_name: &str, input: Option<&Value>) -> Option<String> {
     let input = input?;
     let path = match tool_name {
-        "str_replace_based_edit_tool" | "write_file" | "read_file" => {
-            input.get("path").and_then(|v| v.as_str())
+        // CLI internal names and Copilot normalized names for file-bearing tools.
+        // Copilot uses "file_path"; CLI uses "path" — check both.
+        "str_replace_based_edit_tool" | "write_file" | "read_file" | "Edit" | "Write" | "Read" => {
+            input
+                .get("file_path")
+                .or_else(|| input.get("path"))
+                .and_then(|v| v.as_str())
         }
-        "bash" => None, // file paths in bash args are too noisy to extract reliably
-        _ => input.get("path").and_then(|v| v.as_str()),
+        "bash" | "Bash" => None, // file paths in bash args are too noisy to extract reliably
+        _ => input
+            .get("path")
+            .or_else(|| input.get("file_path"))
+            .and_then(|v| v.as_str()),
     }?;
 
     Some(path.to_string())
@@ -466,6 +502,127 @@ mod tests {
         assert_eq!(
             normalize_user_text(input),
             Some("Skill invocation: prompt-history".to_string())
+        );
+    }
+
+    // ── collect_assistant_context helpers ─────────────────────────────────────
+
+    fn raw_assistant_tool_use(tool_name: &str, file_path: Option<&str>) -> RawMessage {
+        let mut input = serde_json::json!({});
+        if let Some(p) = file_path {
+            input["path"] = serde_json::Value::String(p.to_string());
+        }
+        RawMessage {
+            msg_type: "assistant".to_string(),
+            message: Some(MessageBody {
+                role: Some("assistant".to_string()),
+                content: Some(serde_json::json!([{
+                    "type": "tool_use",
+                    "name": tool_name,
+                    "input": input
+                }])),
+            }),
+            git_branch: None,
+            timestamp: None,
+        }
+    }
+
+    fn raw_tool_result_turn() -> RawMessage {
+        RawMessage {
+            msg_type: "user".to_string(),
+            message: Some(MessageBody {
+                role: Some("user".to_string()),
+                content: Some(serde_json::json!([{
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_123",
+                    "content": "ok"
+                }])),
+            }),
+            git_branch: None,
+            timestamp: None,
+        }
+    }
+
+    fn raw_human_turn(text: &str) -> RawMessage {
+        RawMessage {
+            msg_type: "user".to_string(),
+            message: Some(MessageBody {
+                role: Some("user".to_string()),
+                content: Some(serde_json::Value::String(text.to_string())),
+            }),
+            git_branch: None,
+            timestamp: None,
+        }
+    }
+
+    #[test]
+    fn test_collect_assistant_context_walks_through_tool_results() {
+        // Simulates: assistant calls Bash, tool_result, assistant edits a file,
+        // tool_result, assistant reads another file, tool_result, human says "looks good"
+        let messages = vec![
+            raw_assistant_tool_use("bash", None),
+            raw_tool_result_turn(),
+            raw_assistant_tool_use("str_replace_based_edit_tool", Some("src/foo.rs")),
+            raw_tool_result_turn(),
+            raw_assistant_tool_use("read_file", Some("src/bar.rs")),
+            raw_tool_result_turn(),
+            raw_human_turn("looks good"), // should stop here
+        ];
+
+        let (tool_calls, files_touched) = collect_assistant_context(&messages, 0);
+
+        assert!(tool_calls.contains(&"Bash".to_string()), "missing Bash");
+        assert!(tool_calls.contains(&"Edit".to_string()), "missing Edit");
+        assert!(tool_calls.contains(&"Read".to_string()), "missing Read");
+        assert!(
+            files_touched.contains(&"src/foo.rs".to_string()),
+            "missing foo.rs"
+        );
+        assert!(
+            files_touched.contains(&"src/bar.rs".to_string()),
+            "missing bar.rs"
+        );
+    }
+
+    #[test]
+    fn test_collect_assistant_context_stops_at_human_turn() {
+        // Ensures the human turn boundary is still respected
+        let messages = vec![
+            raw_assistant_tool_use("bash", None),
+            raw_human_turn("next prompt"), // stop — don't cross into the next exchange
+            raw_assistant_tool_use("read_file", Some("src/other.rs")),
+        ];
+
+        let (tool_calls, files_touched) = collect_assistant_context(&messages, 0);
+
+        assert_eq!(tool_calls, vec!["Bash"]);
+        assert!(files_touched.is_empty());
+    }
+
+    #[test]
+    fn test_extract_file_copilot_names_and_field() {
+        // Copilot uses normalized tool names ("Edit", "Read") and "file_path" not "path"
+        let edit_input = serde_json::json!({
+            "file_path": "src/auth.rs",
+            "old_string": "x",
+            "new_string": "y"
+        });
+        assert_eq!(
+            extract_file_from_tool("Edit", Some(&edit_input)),
+            Some("src/auth.rs".to_string())
+        );
+
+        let read_input = serde_json::json!({"file_path": "src/main.rs"});
+        assert_eq!(
+            extract_file_from_tool("Read", Some(&read_input)),
+            Some("src/main.rs".to_string())
+        );
+
+        // CLI names with "path" still work
+        let cli_input = serde_json::json!({"path": "src/lib.rs"});
+        assert_eq!(
+            extract_file_from_tool("str_replace_based_edit_tool", Some(&cli_input)),
+            Some("src/lib.rs".to_string())
         );
     }
 }
