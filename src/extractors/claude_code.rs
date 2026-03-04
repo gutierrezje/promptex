@@ -22,11 +22,16 @@ use crate::prompt::PromptEntry;
 pub struct ClaudeCodeExtractor {
     /// The ~/.claude/projects/{slug}/ directory for this project.
     project_log_dir: PathBuf,
+    /// The project root directory; used to relativize absolute file paths in logs.
+    project_root: PathBuf,
 }
 
 impl ClaudeCodeExtractor {
-    pub fn new(project_log_dir: PathBuf) -> Self {
-        Self { project_log_dir }
+    pub fn new(project_log_dir: PathBuf, project_root: PathBuf) -> Self {
+        Self {
+            project_log_dir,
+            project_root,
+        }
     }
 
     /// Resolve the Claude Code log directory for `project_root`.
@@ -69,7 +74,8 @@ impl PromptExtractor for ClaudeCodeExtractor {
 
         for session_file in session_files {
             let mut file_entries =
-                extract_from_session(&session_file, since, until).unwrap_or_default();
+                extract_from_session(&session_file, since, until, &self.project_root)
+                    .unwrap_or_default();
             entries.append(&mut file_entries);
         }
 
@@ -174,10 +180,24 @@ struct MessageBody {
     content: Option<Value>, // string or array
 }
 
+/// Strip `project_root` from an absolute path, returning a repo-relative path.
+///
+/// If the path is already relative or doesn't start with `project_root`, it is
+/// returned as-is. This normalizes the absolute paths that Claude Code writes
+/// into tool `file_path` / `path` fields so they can be matched against
+/// repo-relative `scope_files` from git.
+fn relativize(path: &str, project_root: &Path) -> String {
+    Path::new(path)
+        .strip_prefix(project_root)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| path.to_string())
+}
+
 fn extract_from_session(
     path: &Path,
     since: DateTime<Utc>,
     until: DateTime<Utc>,
+    project_root: &Path,
 ) -> Result<Vec<PromptEntry>> {
     let file = File::open(path).context("Failed to open session file")?;
     let reader = BufReader::new(file);
@@ -213,6 +233,12 @@ fn extract_from_session(
                         // Collect tool calls and files from subsequent assistant messages
                         let (tool_calls, files_touched) =
                             collect_assistant_context(&raw_messages, i + 1);
+                        // Absolutize paths logged by Claude Code to repo-relative paths
+                        // so they can be matched against scope_files from git.
+                        let files_touched: Vec<String> = files_touched
+                            .into_iter()
+                            .map(|f| relativize(&f, project_root))
+                            .collect();
 
                         let mut entry = PromptEntry::new(
                             branch,
@@ -455,6 +481,22 @@ mod tests {
         assert_eq!(normalize_tool_name("bash"), "Bash");
         assert_eq!(normalize_tool_name("str_replace_based_edit_tool"), "Edit");
         assert_eq!(normalize_tool_name("read_file"), "Read");
+    }
+
+    #[test]
+    fn test_relativize_strips_project_root() {
+        let root = Path::new("/Users/alice/myproject");
+        assert_eq!(
+            relativize("/Users/alice/myproject/src/main.rs", root),
+            "src/main.rs"
+        );
+        // Already relative — returned as-is
+        assert_eq!(relativize("src/main.rs", root), "src/main.rs");
+        // Different project — returned as-is
+        assert_eq!(
+            relativize("/Users/alice/otherproject/foo.rs", root),
+            "/Users/alice/otherproject/foo.rs"
+        );
     }
 
     #[test]
