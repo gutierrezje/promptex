@@ -143,7 +143,6 @@ fn extract_from_rollout(
                 prompt,
                 files_touched,
                 tool_calls,
-                String::new(),
                 "codex".to_string(),
                 model.clone(),
             );

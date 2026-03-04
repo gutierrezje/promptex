@@ -27,6 +27,11 @@ Always edit `skills/prompt-history/` first, then sync to `.claude/skills/prompt-
 ## Runtime & Build System
 Always use **cargo** for Rust development.
 
+> **Important:** Never invoke `pmtx` (the PATH binary) directly — it is `~/.cargo/bin/pmtx`
+> and is only updated via `cargo install --path .`. It can silently lag behind the source.
+> Always use `./target/debug/pmtx` or `cargo run -- <args>` to ensure you're running the
+> latest code.
+
 ## Common Commands
 - `cargo build` — build debug binary
 - `cargo build --release` — build optimized binary

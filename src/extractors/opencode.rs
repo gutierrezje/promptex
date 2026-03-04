@@ -112,7 +112,6 @@ impl PromptExtractor for OpenCodeExtractor {
                         text,
                         files_touched,
                         tool_calls,
-                        String::new(),
                         "opencode".to_string(),
                         None,
                     );

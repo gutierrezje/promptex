@@ -191,7 +191,6 @@ mod tests {
             prompt: "test prompt".to_string(),
             files_touched: files.iter().map(|s| s.to_string()).collect(),
             tool_calls: tool_calls.iter().map(|s| s.to_string()).collect(),
-            outcome: "done".to_string(),
             tool: "claude-code".to_string(),
             model: None,
             assistant_context: None,

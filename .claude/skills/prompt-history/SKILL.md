@@ -36,7 +36,7 @@ When the user wants PR-ready output, or at the end of a session, run:
 pmtx extract [scope-flags]
 ```
 
-This outputs structured JSON containing the curated entries and a `format_spec`. You then:
+This outputs structured JSON containing the curated entries. You then:
 1. **Categorize** each entry into one of three sections (see below)
 2. **Render** the final PR markdown — see `references/rendering-rules.md` for the full format spec
 
@@ -61,13 +61,13 @@ Assign each entry to the most fitting section:
 - **🔧 Solution** — implementing, fixing, changing: writing code, editing files, refactoring, debugging a fix, configuring something
 - **✅ Testing** — verifying, validating: running tests, checking output, confirming a fix works, writing test cases
 
-**Short replies with `assistant_context`**: when an entry's prompt is short (a bare "yes", "go ahead", "looks good"), the `assistant_context` field contains the tail of the preceding assistant turn — the proposal or question that was being approved. Use it to categorize correctly. For example, "yes" with `assistant_context: "Should I refactor the auth module to use JWT?"` is a Solution approval, not noise.
+**`assistant_context`**: the tail of the preceding assistant turn is always captured when one exists. Use it to improve categorization for any entry — not just short ones. It's especially valuable for bare confirmations ("yes", "go ahead", "looks good") and for hybrid messages that begin with approval before adding new context ("yes fix that. also check..."). For example, "yes" with `assistant_context` ending in "Should I refactor the auth module to use JWT?" is a Solution approval, not noise.
 
 **Noise entries to drop:**
 - Prompts invoking pmtx itself or asking to extract/summarize prompt history — these are meta, not development work (e.g. "extract my prompts", "add my prompts to the PR", the skill invocation turn)
 - Entries with no tool calls and no files touched, unless the prompt shows significant deliberation — architectural questions, design tradeoffs, or reasoning that visibly shaped what came next are worth keeping even without artifacts
 - Near-duplicate prompts (semantically the same ask, rephrased slightly) — keep the most recent version, which is usually the more refined one
-- Short replies with no `assistant_context` and no meaningful tool calls
+- Short replies with no meaningful tool calls and no clear proposal in `assistant_context`
 
 When in doubt, keep the entry. The user can always trim.
 

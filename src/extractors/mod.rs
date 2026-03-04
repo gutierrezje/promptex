@@ -99,7 +99,7 @@ pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
 
     if ClaudeCodeExtractor::is_available(project_root) {
         if let Some(log_dir) = ClaudeCodeExtractor::log_dir_for(project_root) {
-            let ex = ClaudeCodeExtractor::new(log_dir);
+            let ex = ClaudeCodeExtractor::new(log_dir, project_root.to_path_buf());
             sources.push((
                 ExtractorKind::ClaudeCode,
                 Box::new(move |since, until| ex.extract(since, until)),
@@ -132,7 +132,6 @@ mod tests {
             prompt.to_string(),
             vec!["src/lib.rs".to_string()],
             vec!["Edit".to_string()],
-            "done".to_string(),
             "claude-code".to_string(),
             None,
         );
