@@ -57,9 +57,9 @@ If the user provided flags, use them. Otherwise infer from context:
 
 Assign each entry to the most fitting section:
 
-- **🔍 Investigation** — exploring, understanding, researching: reading code, explaining a design, asking what something does, looking into an error, comparing approaches
-- **🔧 Solution** — implementing, fixing, changing: writing code, editing files, refactoring, debugging a fix, configuring something
-- **✅ Testing** — verifying, validating: running tests, checking output, confirming a fix works, writing test cases
+- **Investigation** — exploring, understanding, researching: reading code, explaining a design, asking what something does, looking into an error, comparing approaches
+- **Solution** — implementing, fixing, changing: writing code, editing files, refactoring, debugging a fix, configuring something
+- **Testing** — verifying, validating: running tests, checking output, confirming a fix works, writing test cases
 
 **`assistant_context`**: the tail of the preceding assistant turn is always captured when one exists. Use it to improve categorization for any entry — not just short ones. It's especially valuable for bare confirmations ("yes", "go ahead", "looks good") and for hybrid messages that begin with approval before adding new context ("yes fix that. also check..."). For example, "yes" with `assistant_context` ending in "Should I refactor the auth module to use JWT?" is a Solution approval, not noise.
 

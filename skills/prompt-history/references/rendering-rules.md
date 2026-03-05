@@ -3,10 +3,10 @@
 ## Output format
 
 ```markdown
-## 🤖 Prompt History
+## Prompt History
 
 <details>
-<summary>N prompts over Xh Ym - Click to expand</summary>
+<summary>N prompts over Xh Ym</summary>
 
 **Session Details**
 - Tools: Claude Code (claude-sonnet-4-6) - 5 prompts, Cursor - 1 prompt
@@ -17,14 +17,14 @@
 
 ---
 
-### 🔍 Investigation
+### Investigation
 
 **[14:05] (Claude Code · claude-sonnet-4-6)**
 > explain how the JWT validation middleware works
 
 ---
 
-### 🔧 Solution
+### Solution
 
 **[14:23] (Claude Code · claude-sonnet-4-6)**
 > implement JWT expiry checking in src/auth.rs
