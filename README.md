@@ -35,9 +35,6 @@ npx skills add gutierrezje/promptex
 ## How It Works
 
 1. **Log extraction**: Reads prompts directly from AI tool session logs — no agent setup required, zero token overhead
-   - Claude Code: `~/.claude/projects/{slug}/*.jsonl`
-   - Codex CLI / Desktop app: `~/.codex/sessions/YYYY/MM/DD/*.jsonl`
-   - OpenCode, Cursor, GitHub Copilot: planned
 2. **Smart scoping**: Analyzes git state to determine relevant range — feature branch lifetime, last N commits, uncommitted changes, or a time window
 3. **Correlation**: Filters entries to those relevant to the scope (time window + file overlap)
 4. **JSON output**: Emits structured data including entries and git context — the agent categorizes semantically and writes the final markdown
@@ -99,10 +96,17 @@ cargo test
 ./target/debug/pmtx --help
 ```
 
-After cloning, activate the pre-commit hook (keeps `.claude/skills/` in sync with `skills/`):
+To dogfood the skill during development, install it globally once:
 
 ```bash
-git config core.hooksPath .githooks
+npx skills add gutierrezje/promptex -g
+```
+
+Then sync edits directly to the global install after any changes:
+
+```bash
+./scripts/sync-skill.sh
+# or manually: cp -r skills/prompt-history/ ~/.agents/skills/prompt-history/
 ```
 
 CI runs format, lint (`-D warnings`), and tests on every push and PR.

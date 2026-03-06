@@ -28,3 +28,6 @@ todos.json
 PLAN.md
 pmtx-skill.zip
 ISSUES.md
+
+# Agent-local skill installs (use `npx skills add` to install)
+.claude/skills/

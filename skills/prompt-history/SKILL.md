@@ -68,6 +68,7 @@ Assign each entry to the most fitting section:
 - Entries with no tool calls and no files touched, unless the prompt shows significant deliberation — architectural questions, design tradeoffs, or reasoning that visibly shaped what came next are worth keeping even without artifacts
 - Near-duplicate prompts (semantically the same ask, rephrased slightly) — keep the most recent version, which is usually the more refined one
 - Short replies with no meaningful tool calls and no clear proposal in `assistant_context`
+- Git/workflow housekeeping with no files touched — branch switches, pushes, merges, pull requests opened — these are overhead, not development work (e.g. "switch to main and push", "sorry I pulled, try again")
 
 When in doubt, keep the entry. The user can always trim.
 

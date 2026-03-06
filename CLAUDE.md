@@ -18,11 +18,20 @@ This is a Rust CLI that:
 - **README.md** - User-facing documentation
 
 ## Skill Files
-The `prompt-history` skill ships in two locations:
-- **`skills/prompt-history/`** — canonical version, committed to the repo, distributed via `npx skills add`
-- **`.claude/skills/prompt-history/`** — local copy for Claude Code dogfooding
+The `prompt-history` skill lives in `skills/prompt-history/` — committed to the repo and distributed via `npx skills add`.
 
-Always edit `skills/prompt-history/` first, then sync to `.claude/skills/prompt-history/`. Never edit the `.claude` copy directly — it will be overwritten on the next sync.
+**Dogfooding workflow:**
+- **First time only:** install the skill globally (agent-agnostic, lands in `~/.agents/skills/`):
+  ```bash
+  npx skills add prompt-history -g
+  ```
+- **After any edits:** sync changes from source directly into the global install:
+  ```bash
+  ./scripts/sync-skill.sh
+  # or manually: cp -r skills/prompt-history/ ~/.agents/skills/prompt-history/
+  ```
+
+Global skill installs live in `~/.agents/skills/` — outside the project, never committed.
 
 ## Runtime & Build System
 Always use **cargo** for Rust development.
