@@ -76,19 +76,35 @@ When in doubt, keep the entry. The user can always trim.
 
 Follow `references/rendering-rules.md` for the full format spec, example output, and per-field rules.
 
-After rendering in chat, generate a timestamp and write the markdown to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` using your file-writing tool rather than shell heredocs. Then open it:
+Generate the markdown, then write it to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` using your file-writing tool. Do **not** render the full markdown in chat.
+
+**After writing the file**, post it as a comment to the open PR:
 
 ```bash
-pmtx status   # find the project ID
-open ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md        # macOS
-xdg-open ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md   # Linux
-start ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md       # Windows
+gh pr view --json number -q '.number' 2>/dev/null && \
+  gh pr comment --body-file ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md
 ```
 
-Tell the user to select all, copy, and paste into their GitHub PR description.
+Then confirm with a brief one-line summary in chat — not the full markdown:
 
-Other options if the user asks:
-- **Add to open PR directly**: `gh pr edit --body-file ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` *(confirm first — overwrites PR body)*
+```
+✓ N prompts (X investigation, Y solution, Z testing) · Xh Ym · posted to PR #N
+  Saved to ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md
+```
+
+If no open PR is detected, skip the comment step and tell the user:
+
+```
+✓ N prompts (X investigation, Y solution, Z testing) · Xh Ym
+  Saved to ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md
+  No open PR found — run `gh pr comment --body-file <path>` when ready.
+```
+
+**If the user wants to update the PR description instead of posting a comment** (confirm first — this overwrites the existing PR body):
+
+```bash
+gh pr edit --body-file ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md
+```
 
 ### Flag reference
 

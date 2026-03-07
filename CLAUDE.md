@@ -55,6 +55,7 @@ Always use **cargo** for Rust development.
 3. Test with `./target/debug/pmtx <command>`
 4. Run `cargo fmt && cargo clippy -- -D warnings` before committing
 5. Run tests with `cargo test`
+6. After editing `skills/`, run `./scripts/sync-skill.sh` to sync to the global install
 
 ## Current Status
 All phases complete. CI enforces fmt, clippy (`-D warnings`), and tests on every push and PR.
