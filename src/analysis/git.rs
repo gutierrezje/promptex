@@ -148,12 +148,8 @@ fn git(args: &[&str]) -> Result<String> {
     String::from_utf8(out.stdout).context("git output is not valid UTF-8")
 }
 
-/// Resolve the best available ref to use as the merge-base target for a mainline branch name.
-///
-/// Priority: `upstream/<mainline>` → `origin/<mainline>` → `<mainline>` (local).
-///
-/// Each remote-tracking ref is checked with `git rev-parse --verify --quiet` — it must
-/// have been fetched locally to qualify. No automatic `git fetch` is attempted.
+// Prefer upstream/<mainline> → origin/<mainline> → local <mainline>.
+// Only checks refs already fetched locally — no git fetch is performed.
 fn resolve_merge_base_ref(mainline: &str) -> String {
     for prefix in ["upstream", "origin"] {
         let candidate = format!("{prefix}/{mainline}");

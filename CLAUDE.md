@@ -57,6 +57,11 @@ Always use **cargo** for Rust development.
 5. Run tests with `cargo test`
 6. After editing `skills/`, run `./scripts/sync-skill.sh` to sync to the global install
 
+## Git Conventions
+- **Commit messages are single-line** — detail belongs in the PR body or comments, not the commit message
+- Use the `fix:` / `chore:` / `feat:` / `refactor:` prefix convention
+- **Merge strategy: rebase merge** — preserves individual commits linearly on main, no merge nodes; use squash only for genuinely messy WIP branches
+
 ## Current Status
 All phases complete. CI enforces fmt, clippy (`-D warnings`), and tests on every push and PR.
 
