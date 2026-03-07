@@ -61,11 +61,14 @@ pub fn find_mainline_branch() -> Result<String> {
 
 /// Return the commit hash where the current branch diverged from mainline.
 ///
-/// Uses `git merge-base HEAD <mainline>`.
+/// Prefers a remote-tracking ref (`upstream/<mainline>`, then `origin/<mainline>`)
+/// over the local branch, so fork workflows get the correct diverge point even
+/// when the local mainline is stale.
 pub fn branch_diverge_point() -> Result<String> {
     let mainline = find_mainline_branch()?;
-    let out = git(&["merge-base", "HEAD", &mainline])
-        .with_context(|| format!("Could not compute diverge point from '{mainline}'"))?;
+    let merge_base_ref = resolve_merge_base_ref(&mainline);
+    let out = git(&["merge-base", "HEAD", &merge_base_ref])
+        .with_context(|| format!("Could not compute diverge point from '{merge_base_ref}'"))?;
     Ok(out.trim().to_string())
 }
 
@@ -143,6 +146,27 @@ fn git(args: &[&str]) -> Result<String> {
     }
 
     String::from_utf8(out.stdout).context("git output is not valid UTF-8")
+}
+
+/// Resolve the best available ref to use as the merge-base target for a mainline branch name.
+///
+/// Priority: `upstream/<mainline>` → `origin/<mainline>` → `<mainline>` (local).
+///
+/// Each remote-tracking ref is checked with `git rev-parse --verify --quiet` — it must
+/// have been fetched locally to qualify. No automatic `git fetch` is attempted.
+fn resolve_merge_base_ref(mainline: &str) -> String {
+    for prefix in ["upstream", "origin"] {
+        let candidate = format!("{prefix}/{mainline}");
+        let exists = Command::new("git")
+            .args(["rev-parse", "--verify", "--quiet", &candidate])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if exists {
+            return candidate;
+        }
+    }
+    mainline.to_string()
 }
 
 fn load_commits(log_args: &[&str]) -> Result<Vec<Commit>> {
@@ -229,5 +253,20 @@ mod tests {
     fn test_has_uncommitted_changes_does_not_panic() {
         // Just verify it runs without error — actual value depends on repo state.
         has_uncommitted_changes().unwrap();
+    }
+
+    #[test]
+    fn test_resolve_merge_base_ref_prefers_origin_over_local() {
+        // This repo has origin/main but no upstream remote.
+        // Should prefer "origin/main" over the bare local branch name.
+        let result = resolve_merge_base_ref("main");
+        assert_eq!(result, "origin/main");
+    }
+
+    #[test]
+    fn test_resolve_merge_base_ref_falls_back_to_local() {
+        // No remote has a branch with this name — should return the name unchanged.
+        let result = resolve_merge_base_ref("nonexistentxyz123");
+        assert_eq!(result, "nonexistentxyz123");
     }
 }
