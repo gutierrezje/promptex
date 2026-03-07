@@ -44,8 +44,13 @@ pub fn is_mainline_branch(branch: &str) -> bool {
 }
 
 /// Find the first mainline branch that exists in this repo.
+///
+/// Checks local branches first, then remote-tracking refs (`origin/`, `upstream/`).
+/// Returns only the branch name (e.g. `"main"`), not the full ref.
 pub fn find_mainline_branch() -> Result<String> {
-    for candidate in ["main", "master", "develop", "trunk"] {
+    let candidates = ["main", "master", "develop", "trunk"];
+    // Local branches first
+    for candidate in candidates {
         let ok = Command::new("git")
             .args(["rev-parse", "--verify", "--quiet", candidate])
             .output()
@@ -54,6 +59,21 @@ pub fn find_mainline_branch() -> Result<String> {
             .success();
         if ok {
             return Ok(candidate.to_string());
+        }
+    }
+    // Fall back to remote-tracking refs — covers fresh clones on a feature branch
+    for remote in ["origin", "upstream"] {
+        for candidate in candidates {
+            let remote_ref = format!("{remote}/{candidate}");
+            let ok = Command::new("git")
+                .args(["rev-parse", "--verify", "--quiet", &remote_ref])
+                .output()
+                .context("Failed to run git rev-parse")?
+                .status
+                .success();
+            if ok {
+                return Ok(candidate.to_string());
+            }
         }
     }
     bail!("Could not find a mainline branch (main, master, develop, trunk)");
