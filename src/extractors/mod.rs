@@ -9,7 +9,7 @@
 //! | Tool           | Status  | Notes                                           |
 //! |----------------|---------|------------------------------------------------ |
 //! | Claude Code    | ✅ Active | JSONL sessions at `~/.claude/projects/`        |
-//! | Codex CLI/App  | ✅ Active | JSONL sessions at `~/.codex/sessions/`         |
+//! | Codex CLI/App  | 🚧 WIP    | JSONL sessions at `~/.codex/sessions/`         |
 //! | OpenCode       | ⏳ TODO  | Migrated to SQLite (v1.2+); needs rewrite       |
 //! | Cursor         | ⏳ TODO  | Log format TBD                                  |
 //! | GitHub Copilot | ⏳ TODO  | Log format TBD                                  |
@@ -44,6 +44,13 @@ impl ExtractorKind {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex CLI / Desktop",
+        }
+    }
+
+    pub fn readiness(&self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "native",
+            Self::Codex => "WIP",
         }
     }
 }

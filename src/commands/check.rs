@@ -22,13 +22,20 @@ pub fn execute() -> Result<()> {
 
     match extractor.primary_kind() {
         Some(kind) => {
-            eprintln!("✓ Native support: {}", kind.label());
-            eprintln!("  Prompts are captured automatically — no setup required.");
+            if kind.readiness() == "native" {
+                eprintln!("✓ Native support: {}", kind.label());
+                eprintln!("  Prompts are captured automatically — no setup required.");
+            } else {
+                eprintln!("⚠ WIP support detected: {}", kind.label());
+                eprintln!("  Extraction exists, but treat results as provisional.");
+            }
             eprintln!("  Run `pmtx extract` when ready to generate PR output.");
         }
         None => {
             eprintln!("⚠ No native support detected for your current tool.");
-            eprintln!("  pmtx can only extract from supported tools (Claude Code, Codex).");
+            eprintln!(
+                "  pmtx currently supports Claude Code natively; Codex support is still WIP."
+            );
             std::process::exit(1);
         }
     }

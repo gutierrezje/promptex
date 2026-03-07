@@ -19,7 +19,7 @@ cargo install --path .
 # Work with your AI agent normally (pmtx reads logs automatically)
 cd ~/myproject
 git checkout -b feature/auth-fix
-# ... work with Claude Code or Codex ...
+# ... work with Claude Code (Codex support is currently WIP) ...
 
 # At the end of your session, ask your agent:
 # "add my prompts to the PR"
@@ -70,12 +70,12 @@ pmtx projects remove <N|id>  # Remove a project by number or full ID
 | Tool | Status |
 |------|--------|
 | Claude Code | ✅ Native |
-| Codex CLI / Desktop | ✅ Native |
+| Codex CLI / Desktop | 🚧 WIP |
 | OpenCode | ⏳ Planned (SQLite rewrite needed) |
 | Cursor | ⏳ Planned |
 | GitHub Copilot | ⏳ Planned |
 
-Native support means `pmtx extract` reads the tool's logs directly with no setup required.
+`Native` means stable direct log extraction with no manual setup. `WIP` means extraction exists but is not yet reliable enough to position as production-ready.
 
 ## Why Use PromptEx?
 

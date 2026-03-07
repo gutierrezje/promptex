@@ -22,7 +22,7 @@ pmtx check
 ```
 
 - **Exit 0**: your tool's logs are captured automatically. Run `pmtx extract` when ready.
-- **Exit 1**: your tool isn't natively supported yet. pmtx can only extract from supported tools (Claude Code, Codex).
+- **Exit 1**: your tool isn't supported yet. pmtx currently has stable native support for Claude Code, with Codex support still WIP.
 
 If `pmtx` is not found, see [Troubleshooting](#troubleshooting) below.
 
