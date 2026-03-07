@@ -1,0 +1,46 @@
+language: "en-US"
+
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+  poem: false
+  collapse_walkthrough: false
+  path_filters:
+    - "!target/**"
+    - "!Cargo.lock"
+  path_instructions:
+    - path: "src/**/*.rs"
+      instructions: |
+        This is a privacy-first, local-only Rust CLI tool (pmtx) that extracts prompts
+        from AI coding session logs. Key design constraints to keep in mind:
+        - No network requests or API calls of any kind — everything is local
+        - `pmtx extract` always emits structured JSON to stdout; markdown rendering is
+          delegated entirely to the agent running the skill
+        - Secrets, tokens, and email addresses must be redacted before any output reaches stdout
+        - Error messages should be actionable — tell the user what to do, not just what failed
+        - All persistent state lives in ~/.promptex/ — nothing is written to the project directory
+    - path: "src/analysis/git.rs"
+      instructions: |
+        This file wraps all git operations. Pay close attention to edge cases:
+        - Detached HEAD state (should fail fast with a clear error)
+        - Shallow clones (git merge-base may return incomplete results)
+        - Repos with no remote configured
+        - Non-standard mainline branch names beyond main/master/develop/trunk
+        - Fork workflows where upstream and origin diverge
+    - path: "src/extractors/**"
+      instructions: |
+        These are native log extractors for AI tools (Claude Code, Codex, etc.).
+        Each extractor reads log files directly — no agent plugin or setup required.
+        Review for: correct log path resolution across OS home directories, robust
+        parsing that degrades gracefully on unexpected log formats, and that no
+        raw log content bypasses the privacy redaction layer before output.
+    - path: "skills/**"
+      instructions: |
+        This is the agent skill definition (markdown + YAML), not Rust code.
+        Review for: clarity of instructions to the agent, correctness of the pmtx
+        command invocations shown, and whether the rendering rules produce clean
+        PR-ready markdown output.
+
+chat:
+  auto_reply: true
