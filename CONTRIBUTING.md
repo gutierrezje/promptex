@@ -24,6 +24,15 @@ Check the [open issues](https://github.com/gutierrezje/promptex/issues) — issu
 4. Run `cargo test` to make sure nothing is broken
 5. Open a PR against `main`
 
+To browse the code as generated docs while you work:
+
+```bash
+cargo doc --document-private-items --no-deps --open
+```
+
+This crate is mostly internal implementation rather than a public library API, so
+`--document-private-items` is usually the most useful view.
+
 ## Commit style
 
 - Single-line commit messages — detail belongs in the PR body

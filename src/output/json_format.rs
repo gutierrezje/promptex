@@ -1,8 +1,4 @@
-//! JSON output for `pmtx extract`.
-//!
-//! Emits correlated entries as structured JSON so an agent can
-//! perform noise filtering, deduplication, semantic categorization,
-//! and render the final PR markdown.
+//! JSON serialization for `pmtx extract`.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -14,7 +10,7 @@ use crate::prompt::PromptEntry;
 /// Top-level JSON envelope emitted by `pmtx extract`.
 #[derive(Serialize)]
 struct JsonOutput<'a> {
-    /// String label for the resolved scope kind.
+    /// Resolved scope kind.
     scope: &'static str,
     since: DateTime<Utc>,
     until: DateTime<Utc>,

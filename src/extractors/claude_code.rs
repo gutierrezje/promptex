@@ -1,11 +1,9 @@
-//! Extractor for Claude Code session transcripts.
+//! Extract prompts from Claude Code session transcripts.
 //!
-//! Claude Code writes append-only JSONL session files to:
-//!   ~/.claude/projects/{slug}/{sessionId}.jsonl
-//!
-//! Each line is an independent JSON object. We look for `user` messages
-//! that contain `text` content (the actual prompt), then collect the
-//! tool calls and touched files from the following `assistant` message.
+//! Claude Code stores per-project JSONL transcripts under
+//! `~/.claude/projects/{slug}/`. This extractor keeps human-authored user turns,
+//! drops known runtime-injected noise, and captures the assistant tool activity
+//! that follows each prompt.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -20,9 +18,9 @@ use super::traits::PromptExtractor;
 use crate::prompt::PromptEntry;
 
 pub struct ClaudeCodeExtractor {
-    /// The ~/.claude/projects/{slug}/ directory for this project.
+    /// Claude Code log directory for the current project.
     project_log_dir: PathBuf,
-    /// The project root directory; used to relativize absolute file paths in logs.
+    /// Project root used to relativize absolute paths found in transcripts.
     project_root: PathBuf,
 }
 
@@ -35,14 +33,10 @@ impl ClaudeCodeExtractor {
     }
 
     /// Resolve the Claude Code log directory for `project_root`.
-    ///
-    /// Claude Code slugifies the absolute project path for the directory name.
     pub fn log_dir_for(project_root: &Path) -> Option<PathBuf> {
         let home = home_dir()?;
         let claude_projects = home.join(".claude").join("projects");
 
-        // Claude Code slugifies the path: replaces '/' with '-'
-        // The leading '-' is intentional and part of the slug (e.g. -Users-alice-myproject)
         let slug = project_root.to_string_lossy().replace('/', "-");
 
         let candidate = claude_projects.join(&slug);
@@ -62,7 +56,6 @@ impl PromptExtractor for ClaudeCodeExtractor {
     fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<PromptEntry>> {
         let mut entries = Vec::new();
 
-        // Collect all *.jsonl files in the project log dir
         let mut session_files: Vec<PathBuf> = fs::read_dir(&self.project_log_dir)
             .context("Failed to read Claude Code project log directory")?
             .filter_map(|e| e.ok())
@@ -142,14 +135,10 @@ fn normalize_user_text(raw: &str) -> Option<String> {
         return None;
     }
 
-    // Session continuation summaries are injected by Claude Code — not real prompts.
     if text.starts_with(CONTINUATION_PREFIX) {
         return None;
     }
 
-    // Skill invocations inject a full skill-context blob as a plain text block:
-    //   "Base directory for this skill: /path/to/skill-name\n\n# Skill Title..."
-    // Compact it to a short label so it doesn't pollute the prompt field.
     if let Some(rest) = text.strip_prefix("Base directory for this skill:") {
         let path = rest.lines().next().unwrap_or("").trim();
         let skill_name = path.split('/').next_back().unwrap_or("unknown");
@@ -158,8 +147,6 @@ fn normalize_user_text(raw: &str) -> Option<String> {
 
     Some(text.to_string())
 }
-
-// ── Session parsing ───────────────────────────────────────────────────────────
 
 /// A raw message line from a Claude Code JSONL session file.
 #[derive(Debug, Deserialize)]
@@ -212,7 +199,6 @@ fn extract_from_session(
         }
     }
 
-    // Walk messages: pair each user prompt with the assistant response that follows
     let mut entries = Vec::new();
     let mut i = 0;
 
@@ -228,11 +214,8 @@ fn extract_from_session(
                             .clone()
                             .unwrap_or_else(|| "unknown".to_string());
 
-                        // Collect tool calls and files from subsequent assistant messages
                         let (tool_calls, files_touched) =
                             collect_assistant_context(&raw_messages, i + 1);
-                        // Absolutize paths logged by Claude Code to repo-relative paths
-                        // so they can be matched against scope_files from git.
                         let files_touched: Vec<String> = files_touched
                             .into_iter()
                             .map(|f| relativize(&f, project_root))
@@ -240,16 +223,14 @@ fn extract_from_session(
 
                         let mut entry = PromptEntry::new(
                             branch,
-                            String::new(), // commit hash not in logs; filled by correlation
+                            String::new(),
                             prompt_text.clone(),
                             files_touched,
                             tool_calls,
                             "claude-code".to_string(),
                             None,
                         );
-                        // Always capture preceding assistant context; the skill decides whether to surface it
                         entry.assistant_context = extract_preceding_context(&raw_messages, i);
-                        // Override timestamp with the actual log timestamp
                         entries.push(with_timestamp(entry, ts));
                     }
                 }
@@ -262,7 +243,7 @@ fn extract_from_session(
     Ok(entries)
 }
 
-/// Extract plain text from a user message (content can be string or array).
+/// Extract plain text from a user message.
 fn extract_user_text(msg: &RawMessage) -> Option<String> {
     let body = msg.message.as_ref()?;
     if body.role.as_deref() != Some("user") {
@@ -273,7 +254,6 @@ fn extract_user_text(msg: &RawMessage) -> Option<String> {
     match content {
         Value::String(s) => normalize_user_text(s),
         Value::Array(parts) => {
-            // Concatenate all text-type content blocks
             let text: String = parts
                 .iter()
                 .filter_map(|p| {
@@ -330,7 +310,6 @@ fn extract_preceding_context(messages: &[RawMessage], before_idx: usize) -> Opti
             if let Some(text) = extract_assistant_text(msg) {
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
-                    // Take the tail — proposals and questions tend to be at the end.
                     let count = trimmed.chars().count();
                     let tail: String = if count <= MAX_CONTEXT_CHARS {
                         trimmed.to_string()
@@ -380,9 +359,9 @@ fn collect_assistant_context(messages: &[RawMessage], start: usize) -> (Vec<Stri
     for msg in messages[start..].iter() {
         if msg.msg_type == "user" {
             if is_tool_result_turn(msg) {
-                continue; // API plumbing — skip and keep walking
+                continue;
             }
-            break; // real human message — stop collecting
+            break;
         }
 
         if msg.msg_type != "assistant" {
@@ -405,7 +384,6 @@ fn collect_assistant_context(messages: &[RawMessage], start: usize) -> (Vec<Stri
                             tool_calls.push(tool_name);
                         }
 
-                        // Extract file path from tool input if present
                         if let Some(file) = extract_file_from_tool(name, part.get("input")) {
                             if !files_touched.contains(&file) {
                                 files_touched.push(file);
@@ -421,7 +399,6 @@ fn collect_assistant_context(messages: &[RawMessage], start: usize) -> (Vec<Stri
 }
 
 fn normalize_tool_name(raw: &str) -> String {
-    // Claude Code tool names: "str_replace_based_edit_tool" → "Edit", "bash" → "Bash", etc.
     match raw {
         "str_replace_based_edit_tool" | "write_file" => "Edit",
         "bash" => "Bash",
@@ -437,15 +414,13 @@ fn normalize_tool_name(raw: &str) -> String {
 fn extract_file_from_tool(tool_name: &str, input: Option<&Value>) -> Option<String> {
     let input = input?;
     let path = match tool_name {
-        // CLI internal names and Copilot normalized names for file-bearing tools.
-        // Copilot uses "file_path"; CLI uses "path" — check both.
         "str_replace_based_edit_tool" | "write_file" | "read_file" | "Edit" | "Write" | "Read" => {
             input
                 .get("file_path")
                 .or_else(|| input.get("path"))
                 .and_then(|v| v.as_str())
         }
-        "bash" | "Bash" => None, // file paths in bash args are too noisy to extract reliably
+        "bash" | "Bash" => None,
         _ => input
             .get("path")
             .or_else(|| input.get("file_path"))
@@ -485,9 +460,7 @@ mod tests {
             relativize("/Users/alice/myproject/src/main.rs", root),
             "src/main.rs"
         );
-        // Already relative — returned as-is
         assert_eq!(relativize("src/main.rs", root), "src/main.rs");
-        // Different project — returned as-is
         assert_eq!(
             relativize("/Users/alice/otherproject/foo.rs", root),
             "/Users/alice/otherproject/foo.rs"
@@ -496,7 +469,6 @@ mod tests {
 
     #[test]
     fn test_strip_junk_drops_standalone_junk() {
-        // Pure junk tags with no trailing human text → empty
         assert_eq!(
             strip_junk_prefixes("<command-name>/exit</command-name>"),
             ""
@@ -541,8 +513,6 @@ mod tests {
             Some("Skill invocation: prompt-history".to_string())
         );
     }
-
-    // ── collect_assistant_context helpers ─────────────────────────────────────
 
     fn raw_assistant_tool_use(tool_name: &str, file_path: Option<&str>) -> RawMessage {
         let mut input = serde_json::json!({});
@@ -594,8 +564,6 @@ mod tests {
 
     #[test]
     fn test_collect_assistant_context_walks_through_tool_results() {
-        // Simulates: assistant calls Bash, tool_result, assistant edits a file,
-        // tool_result, assistant reads another file, tool_result, human says "looks good"
         let messages = vec![
             raw_assistant_tool_use("bash", None),
             raw_tool_result_turn(),
@@ -603,7 +571,7 @@ mod tests {
             raw_tool_result_turn(),
             raw_assistant_tool_use("read_file", Some("src/bar.rs")),
             raw_tool_result_turn(),
-            raw_human_turn("looks good"), // should stop here
+            raw_human_turn("looks good"),
         ];
 
         let (tool_calls, files_touched) = collect_assistant_context(&messages, 0);
@@ -623,10 +591,9 @@ mod tests {
 
     #[test]
     fn test_collect_assistant_context_stops_at_human_turn() {
-        // Ensures the human turn boundary is still respected
         let messages = vec![
             raw_assistant_tool_use("bash", None),
-            raw_human_turn("next prompt"), // stop — don't cross into the next exchange
+            raw_human_turn("next prompt"),
             raw_assistant_tool_use("read_file", Some("src/other.rs")),
         ];
 
@@ -638,7 +605,6 @@ mod tests {
 
     #[test]
     fn test_extract_file_copilot_names_and_field() {
-        // Copilot uses normalized tool names ("Edit", "Read") and "file_path" not "path"
         let edit_input = serde_json::json!({
             "file_path": "src/auth.rs",
             "old_string": "x",
@@ -655,7 +621,6 @@ mod tests {
             Some("src/main.rs".to_string())
         );
 
-        // CLI names with "path" still work
         let cli_input = serde_json::json!({"path": "src/lib.rs"});
         assert_eq!(
             extract_file_from_tool("str_replace_based_edit_tool", Some(&cli_input)),

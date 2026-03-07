@@ -1,8 +1,7 @@
-//! Git operations for reading repository state.
+//! Thin wrappers around `git` for reading repository state.
 //!
-//! All functions shell out to git rather than using a library, keeping the
-//! dependency footprint minimal and behaviour consistent with what the user
-//! already has installed.
+//! PromptEx shells out instead of using a git library so behavior matches the
+//! user's installed git configuration and available refs.
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -20,8 +19,6 @@ pub struct Commit {
     /// Files changed in this commit.
     pub files: Vec<String>,
 }
-
-// ── Branch helpers ────────────────────────────────────────────────────────────
 
 /// Return the name of the currently checked-out branch.
 ///
@@ -49,7 +46,6 @@ pub fn is_mainline_branch(branch: &str) -> bool {
 /// Returns only the branch name (e.g. `"main"`), not the full ref.
 pub fn find_mainline_branch() -> Result<String> {
     let candidates = ["main", "master", "develop", "trunk"];
-    // Local branches first
     for candidate in candidates {
         let ok = Command::new("git")
             .args(["rev-parse", "--verify", "--quiet", candidate])
@@ -61,7 +57,6 @@ pub fn find_mainline_branch() -> Result<String> {
             return Ok(candidate.to_string());
         }
     }
-    // Fall back to remote-tracking refs — covers fresh clones on a feature branch
     for remote in ["origin", "upstream"] {
         for candidate in candidates {
             let remote_ref = format!("{remote}/{candidate}");
@@ -92,8 +87,6 @@ pub fn branch_diverge_point() -> Result<String> {
     Ok(out.trim().to_string())
 }
 
-// ── Working-tree state ────────────────────────────────────────────────────────
-
 /// Return true if there are any staged or unstaged changes.
 pub fn has_uncommitted_changes() -> Result<bool> {
     let out = git(&["status", "--porcelain"])?;
@@ -107,9 +100,7 @@ pub fn uncommitted_files() -> Result<Vec<String>> {
         .lines()
         .filter(|l| !l.trim().is_empty())
         .map(|l| {
-            // Format: "XY filename" or "XY old -> new" for renames
             let name = l[3..].trim();
-            // For renames git outputs "old -> new"; take the new path
             if let Some((_, new)) = name.split_once(" -> ") {
                 new.to_string()
             } else {
@@ -119,8 +110,6 @@ pub fn uncommitted_files() -> Result<Vec<String>> {
         .collect();
     Ok(files)
 }
-
-// ── Commit loading ────────────────────────────────────────────────────────────
 
 /// Load all commits reachable from HEAD but not from `since_hash` (exclusive).
 ///
@@ -151,8 +140,6 @@ pub fn commits_since_time(since: DateTime<Utc>) -> Result<Vec<Commit>> {
     ])
 }
 
-// ── Internals ─────────────────────────────────────────────────────────────────
-
 /// Run `git <args>` and return stdout as a String. Errors on non-zero exit.
 fn git(args: &[&str]) -> Result<String> {
     let out = Command::new("git")
@@ -168,8 +155,11 @@ fn git(args: &[&str]) -> Result<String> {
     String::from_utf8(out.stdout).context("git output is not valid UTF-8")
 }
 
-// Prefer upstream/<mainline> → origin/<mainline> → local <mainline>.
-// Only checks refs already fetched locally — no git fetch is performed.
+/// Choose the best ref to use for merge-base calculation.
+///
+/// Preference order is `upstream/<mainline>`, then `origin/<mainline>`, then
+/// the local branch name. The function only inspects refs already present
+/// locally; it never fetches.
 fn resolve_merge_base_ref(mainline: &str) -> String {
     for prefix in ["upstream", "origin"] {
         let candidate = format!("{prefix}/{mainline}");
@@ -228,8 +218,6 @@ fn files_in_commit(hash: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,7 +235,6 @@ mod tests {
 
     #[test]
     fn test_current_branch_returns_string() {
-        // This repo is a git repo, so current_branch() should succeed.
         let branch = current_branch().unwrap();
         assert!(!branch.is_empty());
     }
@@ -255,10 +242,8 @@ mod tests {
     #[test]
     fn test_last_n_commits_returns_commits() {
         let commits = last_n_commits(3).unwrap();
-        // We have at least one commit in this repo.
         assert!(!commits.is_empty());
         assert!(commits.len() <= 3);
-        // Each commit should have a non-empty hash and message.
         for c in &commits {
             assert_eq!(c.short_hash.len(), 7);
             assert!(!c.message.is_empty());
@@ -267,21 +252,17 @@ mod tests {
 
     #[test]
     fn test_has_uncommitted_changes_does_not_panic() {
-        // Just verify it runs without error — actual value depends on repo state.
         has_uncommitted_changes().unwrap();
     }
 
     #[test]
     fn test_resolve_merge_base_ref_prefers_origin_over_local() {
-        // This repo has origin/main but no upstream remote.
-        // Should prefer "origin/main" over the bare local branch name.
         let result = resolve_merge_base_ref("main");
         assert_eq!(result, "origin/main");
     }
 
     #[test]
     fn test_resolve_merge_base_ref_falls_back_to_local() {
-        // No remote has a branch with this name — should return the name unchanged.
         let result = resolve_merge_base_ref("nonexistentxyz123");
         assert_eq!(result, "nonexistentxyz123");
     }

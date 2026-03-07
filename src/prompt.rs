@@ -1,4 +1,4 @@
-//! Prompt entry structure shared across all extractors.
+//! Shared prompt record used by every extractor.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -31,10 +31,10 @@ pub struct PromptEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
-    /// The tail of the most recent preceding assistant turn. Captured unconditionally
-    /// so the skill can use it for categorization context — especially useful for
-    /// short confirmations ("yes", "go ahead") or hybrid messages that begin with
-    /// approval before adding new context ("yes fix that. also...").
+    /// Tail of the most recent preceding assistant turn, when available.
+    ///
+    /// This helps the renderer classify short replies such as `yes` or
+    /// `go ahead` that would be ambiguous on their own.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub assistant_context: Option<String>,

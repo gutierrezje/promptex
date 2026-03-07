@@ -66,7 +66,6 @@ fn load_sorted_projects() -> Result<Vec<ProjectInfo>> {
         });
     }
 
-    // Sort: most recent first; projects with no entries go to the bottom
     projects.sort_by(|a, b| match (b.last_ts, a.last_ts) {
         (Some(bt), Some(at)) => bt.cmp(&at),
         (Some(_), None) => std::cmp::Ordering::Less,
@@ -111,7 +110,6 @@ fn list() -> Result<()> {
 }
 
 fn remove(project_id: &str) -> Result<()> {
-    // Accept either a 1-based index number or a full project ID string
     let resolved_id = if let Ok(n) = project_id.parse::<usize>() {
         let projects = load_sorted_projects()?;
         projects

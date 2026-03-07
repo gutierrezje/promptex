@@ -17,7 +17,6 @@ pub fn execute(
 ) -> Result<()> {
     let cwd = env::current_dir()?;
 
-    // ── Determine scope ───────────────────────────────────────────────────────
     let flags = ScopeFlags {
         uncommitted,
         commits,
@@ -49,7 +48,6 @@ pub fn execute(
         }
     }
 
-    // ── Resolve scope into files + time window ────────────────────────────────
     let ctx = build_git_context(&scope)?;
     eprintln!(
         "  ✓ Time range: {} → {}",
@@ -63,7 +61,6 @@ pub fn execute(
         eprintln!("  ✓ {} file(s) in scope", ctx.scope_files.len());
     }
 
-    // ── Detect extractors and pull raw entries ────────────────────────────────
     let pid = project_id::get_project_id(&cwd)?;
     let extractor = extractors::detect(&cwd, &pid);
     let kind_label = extractor
@@ -81,7 +78,6 @@ pub fn execute(
     }
     eprintln!("  ✓ {} total in time range", raw_entries.len());
 
-    // ── Correlate — filter to scope ───────────────────────────────────────────
     let entries = filter_by_scope(&raw_entries, &ctx);
     eprintln!("  ✓ Filtered to {} relevant entries", entries.len());
 
@@ -91,7 +87,6 @@ pub fn execute(
         return Ok(());
     }
 
-    // ── Emit structured JSON for agent-side categorization ───────────────────
     let out = json_format::render_json(&entries, &ctx, &scope)?;
     println!("{out}");
 

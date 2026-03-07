@@ -1,4 +1,4 @@
-//! PromptExtractor trait — implemented by each tool-specific extractor.
+//! Shared interface for tool-specific prompt extractors.
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};

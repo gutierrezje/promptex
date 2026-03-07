@@ -1,18 +1,9 @@
-//! Extractor for OpenAI Codex CLI and desktop app session logs.
+//! Extract prompts from Codex CLI and desktop rollout logs.
 //!
-//! Both the CLI and the Codex desktop app (released Jan 2026) share the same
-//! `RolloutRecorder` from `codex-core` and write to the same path:
-//!   ~/.codex/sessions/YYYY/MM/DD/rollout-{timestamp}-{uuid}.jsonl
-//!
-//! File structure (JSONL, adjacent-tagged `RolloutItem` enum):
-//!   Line 0: `{"type": "session_meta", "payload": { id, timestamp, cwd, model_provider, ... }}`
-//!   Line 1+: mixed events, notably:
-//!     - `{"type":"event_msg","payload":{"type":"user_message", ...}}`
-//!     - `{"type":"response_item","payload":{"type":"function_call"|"custom_tool_call", ...}}`
-//!
-//! Codex logs include timestamps on each JSONL event line.
-//! We timestamp each extracted prompt from its `user_message` event timestamp
-//! (falling back to session metadata only when needed).
+//! Codex stores JSONL session files under `~/.codex/sessions/`. The first line
+//! contains session metadata; later lines contain user messages, tool calls,
+//! and other events. This extractor timestamps prompts from the `user_message`
+//! event when possible and falls back to session metadata.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -35,7 +26,6 @@ impl CodexExtractor {
     }
 
     pub fn default_sessions_dir() -> Option<PathBuf> {
-        // Respects CODEX_HOME env var override (same as the CLI itself)
         let base = if let Ok(home) = std::env::var("CODEX_HOME") {
             PathBuf::from(home)
         } else {
@@ -68,8 +58,6 @@ impl PromptExtractor for CodexExtractor {
     }
 }
 
-// ── File collection ────────────────────────────────────────────────────────────
-
 fn collect_jsonl_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let Ok(entries) = fs::read_dir(dir) else {
@@ -88,8 +76,6 @@ fn collect_jsonl_files(dir: &Path) -> Vec<PathBuf> {
     files.sort();
     files
 }
-
-// ── Session extraction ─────────────────────────────────────────────────────────
 
 fn extract_from_rollout(
     path: &Path,
@@ -114,13 +100,10 @@ fn extract_from_rollout(
         return Ok(Vec::new());
     }
 
-    // Line 0 is always session_meta — used for model attribution and as a
-    // timestamp fallback when per-event timestamps are missing.
     let session_ts_fallback = parse_session_timestamp(&lines[0], path);
 
     let model = extract_session_model(&lines[0]);
 
-    // Walk subsequent lines, grouping events into turns by user_message boundaries.
     let mut entries = Vec::new();
     let mut i = 1;
 
@@ -138,7 +121,7 @@ fn extract_from_rollout(
             let (tool_calls, files_touched) = collect_turn_tools(&lines, i + 1);
 
             let entry = PromptEntry::new(
-                "unknown".to_string(), // Codex sessions don't embed the git branch
+                "unknown".to_string(),
                 String::new(),
                 prompt,
                 files_touched,
@@ -155,15 +138,12 @@ fn extract_from_rollout(
     Ok(entries)
 }
 
-// ── SessionMeta parsing ────────────────────────────────────────────────────────
-
 /// Parse the session timestamp from the `session_meta` payload, falling back to
 /// the filename when the field is absent.
 ///
 /// Filename format: `rollout-2026-02-03T13-40-28-{uuid}.jsonl`
 /// Colons in the time portion are encoded as dashes to stay filesystem-safe.
 fn parse_session_timestamp(meta: &Value, path: &Path) -> Option<DateTime<Utc>> {
-    // Primary: session_meta payload.timestamp (RFC-3339 string)
     if let Some(ts) = meta
         .get("payload")
         .and_then(|p| p.get("timestamp"))
@@ -174,12 +154,8 @@ fn parse_session_timestamp(meta: &Value, path: &Path) -> Option<DateTime<Utc>> {
         return Some(ts);
     }
 
-    // Fallback: parse from filename stem.
-    // "rollout-2026-02-03T13-40-28-019c24ce-590a-7e42-b2e3-efe508ee3731"
-    // NOTE: Codex writes the filename in LOCAL time (not UTC). Without a
-    // timezone offset we cannot reliably convert, so this fallback is only
-    // used when payload.timestamp is absent. The payload path is always
-    // preferred and covers all known Codex versions.
+    // Filename timestamps are local time, so this is only a best-effort
+    // fallback when the structured timestamp is missing.
     let stem = path.file_stem()?.to_str()?;
     let rest = stem.strip_prefix("rollout-")?;
 
@@ -187,11 +163,9 @@ fn parse_session_timestamp(meta: &Value, path: &Path) -> Option<DateTime<Utc>> {
         return None;
     }
 
-    let date = &rest[..10]; // "2026-02-03"
-    let time = &rest[11..19]; // "13-40-28" (dashes instead of colons)
+    let date = &rest[..10];
+    let time = &rest[11..19];
 
-    // Parse as naive local datetime and convert to UTC via the system offset.
-    // This is best-effort; rely on payload.timestamp when available.
     let naive_str = format!("{} {}", date, time.replace('-', ":"));
     chrono::NaiveDateTime::parse_from_str(&naive_str, "%Y-%m-%d %H:%M:%S")
         .ok()
@@ -223,8 +197,6 @@ fn parse_event_timestamp(event: &Value) -> Option<DateTime<Utc>> {
         .map(|dt| dt.with_timezone(&Utc))
 }
 
-// ── Event parsing ──────────────────────────────────────────────────────────────
-
 /// Extract the prompt text from a `user_message` event_msg line.
 fn extract_user_message(event: &Value) -> Option<String> {
     if event.get("type")?.as_str()? != "event_msg" {
@@ -234,8 +206,6 @@ fn extract_user_message(event: &Value) -> Option<String> {
     if payload.get("type")?.as_str()? != "user_message" {
         return None;
     }
-    // Codex Desktop v0.107+ uses "message" (string); older builds used "content"
-    // (string or array of {type, text} parts). Try both.
     let content = payload.get("message").or_else(|| payload.get("content"))?;
     match content {
         Value::String(s) => {
@@ -504,7 +474,7 @@ fn is_path_like_token(token: &str) -> bool {
         return true;
     }
 
-    // Bare filenames like Cargo.toml / src.rs.
+    // Allow bare filenames like Cargo.toml or main.rs.
     if let Some((stem, ext)) = token.rsplit_once('.') {
         let stem_has_alpha = stem.chars().any(|c| c.is_ascii_alphabetic());
         let ext_has_alpha = ext.chars().any(|c| c.is_ascii_alphabetic());
@@ -540,8 +510,6 @@ fn with_timestamp(mut entry: PromptEntry, ts: DateTime<Utc>) -> PromptEntry {
     entry
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -574,10 +542,8 @@ mod tests {
 
     #[test]
     fn test_parse_timestamp_from_filename_fallback() {
-        // Filename uses local time; the fallback converts to UTC via the system
-        // offset. We can't assert a fixed UTC string here because the offset
-        // varies by machine, so just verify the parsed result is within ±14h of
-        // the naive time (a valid UTC offset range).
+        // The exact UTC value depends on the machine's local timezone, so
+        // assert a reasonable offset bound instead of a fixed timestamp.
         let meta = serde_json::json!({"type": "session_meta", "payload": {}});
         let path = Path::new("rollout-2026-02-03T13-40-28-019c24ce.jsonl");
         let ts = parse_session_timestamp(&meta, path).unwrap();

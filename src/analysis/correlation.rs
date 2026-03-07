@@ -1,8 +1,8 @@
-//! Correlation — match extracted prompt entries to the current git scope.
+//! Correlate extracted prompts with the active git scope.
 //!
-//! The pipeline is:
-//!   1. `build_git_context` — resolve the scope once into files + time window
-//!   2. `filter_by_scope`   — keep entries that touch scoped files or fall in the window
+//! The extractor layer only knows about log timestamps and tool activity.
+//! This module adds git context so prompt history can be narrowed to the work
+//! the user is trying to describe.
 
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
@@ -10,8 +10,6 @@ use chrono::{DateTime, Duration, Utc};
 use crate::analysis::git::{self, Commit};
 use crate::analysis::scope::ExtractionScope;
 use crate::prompt::PromptEntry;
-
-// ── GitContext ─────────────────────────────────────────────────────────────────
 
 /// Pre-resolved git context for an extraction scope.
 ///
@@ -35,8 +33,6 @@ pub struct GitContext {
     /// Commits in scope. Empty for [`ExtractionScope::Uncommitted`].
     pub commits: Vec<Commit>,
 }
-
-// ── Public API ─────────────────────────────────────────────────────────────────
 
 /// Build a [`GitContext`] by resolving the scope against live git state.
 ///
@@ -63,17 +59,13 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
         }
 
         ExtractionScope::LastNCommits(n) => {
-            // Load one extra commit as a look-behind anchor so we can bound the
-            // window to [anchor.timestamp, scope_commits.latest.timestamp].
-            // Prompts that produced a commit happen *before* it, not after, so
-            // `until` must be the commit time rather than `now`.
+            // Use one earlier commit as an anchor so the window can include the
+            // prompts that likely produced the scoped commits.
             let all = git::last_n_commits(n + 1)?;
             let (scope_commits, since) = if all.len() > *n {
-                // oldest entry is the anchor (just outside scope)
                 let anchor_time = all[0].timestamp;
                 (all[1..].to_vec(), anchor_time)
             } else {
-                // fewer commits than requested — use all, fall back for since
                 let fallback =
                     earliest_commit_time(&all).unwrap_or_else(|| until - Duration::days(7));
                 (all, fallback)
@@ -102,7 +94,6 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
 
         ExtractionScope::Uncommitted => {
             let scope_files = git::uncommitted_files()?;
-            // Lower bound: HEAD commit time — "everything since the last commit".
             let since = git::last_n_commits(1)?
                 .into_iter()
                 .next()
@@ -145,8 +136,6 @@ pub fn filter_by_scope(entries: &[PromptEntry], ctx: &GitContext) -> Vec<PromptE
         .collect()
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 fn in_time_window(entry: &PromptEntry, ctx: &GitContext) -> bool {
     entry.timestamp >= ctx.since && entry.timestamp <= ctx.until
 }
@@ -176,8 +165,6 @@ fn latest_commit_time(commits: &[Commit]) -> Option<DateTime<Utc>> {
     commits.iter().map(|c| c.timestamp).max()
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,17 +193,14 @@ mod tests {
         }
     }
 
-    // Fixed reference point: 2024-01-15 12:00:00 UTC
     fn t(h: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2024, 1, 15, 12, 0, 0).unwrap() + Duration::hours(h)
     }
 
-    // ── filter_by_scope — time window ─────────────────────────────────────────
-
     #[test]
     fn test_filter_keeps_entry_in_time_window() {
         let ctx = make_ctx(t(0), t(2), &[]);
-        let entries = vec![make_entry(t(1), &[], &[])]; // t(1) is between t(0) and t(2)
+        let entries = vec![make_entry(t(1), &[], &[])];
         let filtered = filter_by_scope(&entries, &ctx);
         assert_eq!(filtered.len(), 1);
     }
@@ -224,7 +208,7 @@ mod tests {
     #[test]
     fn test_filter_drops_entry_outside_time_window_no_file_match() {
         let ctx = make_ctx(t(0), t(2), &[]);
-        let entries = vec![make_entry(t(5), &[], &[])]; // t(5) is after t(2), no files
+        let entries = vec![make_entry(t(5), &[], &[])];
         let filtered = filter_by_scope(&entries, &ctx);
         assert_eq!(filtered.len(), 0);
     }
@@ -238,11 +222,8 @@ mod tests {
         assert_eq!(filtered.len(), 2);
     }
 
-    // ── filter_by_scope — file matching ───────────────────────────────────────
-
     #[test]
     fn test_filter_keeps_entry_matching_scoped_file() {
-        // Entry is outside the time window but touches a scoped file.
         let ctx = make_ctx(t(0), t(1), &["src/auth.rs"]);
         let entries = vec![make_entry(t(5), &["src/auth.rs"], &[])];
         let filtered = filter_by_scope(&entries, &ctx);
@@ -260,20 +241,17 @@ mod tests {
     #[test]
     fn test_filter_keeps_entry_with_one_matching_file_among_many() {
         let ctx = make_ctx(t(0), t(1), &["src/auth.rs", "src/lib.rs"]);
-        // Entry outside window, touches one scoped file and one unrelated.
         let entries = vec![make_entry(t(5), &["src/auth.rs", "src/other.rs"], &[])];
         let filtered = filter_by_scope(&entries, &ctx);
         assert_eq!(filtered.len(), 1);
     }
 
-    // ── filter_by_scope — combined ────────────────────────────────────────────
-
     #[test]
     fn test_filter_keeps_entry_matching_either_condition() {
         let ctx = make_ctx(t(0), t(2), &["src/auth.rs"]);
-        let in_window = make_entry(t(1), &[], &[]); // time match
-        let file_match = make_entry(t(5), &["src/auth.rs"], &[]); // file match
-        let neither = make_entry(t(5), &["src/other.rs"], &[]); // no match
+        let in_window = make_entry(t(1), &[], &[]);
+        let file_match = make_entry(t(5), &["src/auth.rs"], &[]);
+        let neither = make_entry(t(5), &["src/other.rs"], &[]);
         let filtered = filter_by_scope(&[in_window, file_match, neither], &ctx);
         assert_eq!(filtered.len(), 2);
     }
@@ -285,11 +263,8 @@ mod tests {
         assert_eq!(filtered.len(), 0);
     }
 
-    // ── build_git_context ─────────────────────────────────────────────────────
-
     #[test]
     fn test_build_git_context_last_n_commits_does_not_panic() {
-        // Verifies the function runs without error in a normal repo context.
         let scope = ExtractionScope::LastNCommits(1);
         build_git_context(&scope).expect("build_git_context should succeed");
     }
@@ -306,8 +281,6 @@ mod tests {
         let ctx = build_git_context(&scope).unwrap();
         assert!(ctx.since <= ctx.until);
     }
-
-    // ── collect_files internal ────────────────────────────────────────────────
 
     #[test]
     fn test_collect_files_deduplicates() {

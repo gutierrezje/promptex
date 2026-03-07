@@ -1,17 +1,10 @@
-//! Project identification for home directory storage
-//!
-//! Each project gets a unique ID based on its git configuration,
-//! allowing ~/.promptex/projects/<id>/ to be isolated per project.
+//! Derive the per-project storage key used under `~/.promptex/projects/`.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Get unique project identifier for current directory
-///
-/// Priority:
-/// 1. Git remote origin URL (stable across clones)
-/// 2. Error if not in git repo (non-git projects unsupported for now)
+/// Build a project identifier from the repository's `origin` URL.
 pub fn get_project_id(cwd: &Path) -> Result<String> {
     let repo_url = Command::new("git")
         .arg("-C")
@@ -36,7 +29,7 @@ pub fn get_project_id(cwd: &Path) -> Result<String> {
     Ok(url.replace("/", "-"))
 }
 
-/// Get the project directory in ~/.promptex/projects/<id>/
+/// Return the storage directory for a project ID.
 pub fn get_project_dir(project_id: &str) -> Result<PathBuf> {
     let home = dirs::home_dir().context("Could not find home directory")?;
     Ok(home.join(".promptex").join("projects").join(project_id))

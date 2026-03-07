@@ -1,35 +1,27 @@
-//! Privacy-first redaction of sensitive values from prompt text.
+//! Redact common secrets from extracted prompt text.
 //!
-//! Patterns are applied in order. Each match is replaced with a
-//! `[REDACTED:<kind>]` placeholder so the prompt remains readable
-//! while secrets are removed.
+//! Patterns run from most specific to least specific. Matches are replaced with
+//! `[REDACTED:<kind>]` so the surrounding text stays readable.
 
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// Patterns ordered from most-specific to least-specific to avoid
-/// partial matches being clobbered by a broader rule.
+/// Patterns ordered from most specific to least specific.
 static PATTERNS: &[(&str, &str)] = &[
-    // PEM private key blocks (multiline)
     (
         "private_key",
         r"(?s)-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----.*?-----END (?:RSA |EC |DSA )?PRIVATE KEY-----",
     ),
-    // JWTs — three base64url segments (match before generic token= rule)
     ("jwt", r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
-    // Known API key prefixes
     (
         "api_key",
         r"(?:sk-proj-|sk-|ghp_|ghs_|glpat-|AKIA[A-Z0-9]{12}|xoxb-|xoxp-)[A-Za-z0-9_\-]{16,}",
     ),
-    // Bearer token values in auth headers
     ("bearer_token", r"(?i)Bearer\s+[A-Za-z0-9_\-\.]{20,}"),
-    // key=value / key: value credentials
     (
         "credential",
         r#"(?i)(?:password|passwd|secret|token|auth|api[_\-]?key)\s*[:=]\s*["']?[^\s"',\]]{8,}["']?"#,
     ),
-    // Email addresses
     ("email", r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"),
 ];
 
@@ -45,9 +37,6 @@ fn compiled_patterns() -> &'static [(&'static str, Regex)] {
 }
 
 /// Redact sensitive values from `text`.
-///
-/// Returns the sanitised string and the kinds of values that were found,
-/// so callers can warn the user without revealing the actual values.
 pub fn redact(text: &str) -> (String, Vec<&'static str>) {
     let mut result = text.to_string();
     let mut kinds = Vec::new();

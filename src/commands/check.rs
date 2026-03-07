@@ -1,12 +1,7 @@
-//! `pmtx check` — report whether native log extraction is available.
+//! Report whether prompt extraction appears available in the current repo.
 //!
-//! Intended to be called at the start of an agent skill. The **exit code**
-//! is the primary contract:
-//!
-//! | Exit code | Meaning                                              |
-//! |-----------|------------------------------------------------------|
-//! | 0         | Native extractor found — prompts captured automatically |
-//! | 1         | Tool not supported — pmtx cannot extract prompts    |
+//! Exit code `0` means at least one extractor was detected. Exit code `1`
+//! means none were detected.
 
 use std::env;
 

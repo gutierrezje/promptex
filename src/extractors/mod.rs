@@ -1,9 +1,8 @@
-//! Extractor detection and dispatch.
+//! Detect and run prompt extractors.
 //!
-//! `detect()` inspects the current environment and collects ALL available
-//! extractors. Entries from every available source are merged and sorted by
-//! timestamp so cross-tool sessions (e.g. Claude Code + Codex on the same
-//! branch) appear together.
+//! More than one extractor may be active in a single workspace, so detection
+//! is intentionally additive. The merged output is sorted by timestamp before
+//! it is returned to the caller.
 //!
 //! ## Extractor support status
 //! | Tool           | Status  | Notes                                           |
@@ -32,7 +31,7 @@ use traits::PromptExtractor;
 type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<Vec<PromptEntry>>>;
 type ExtractResult = Result<(Vec<(ExtractorKind, usize)>, Vec<PromptEntry>)>;
 
-/// Which extractor was selected and is in use.
+/// Extractor source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExtractorKind {
     ClaudeCode,
@@ -55,16 +54,13 @@ impl ExtractorKind {
     }
 }
 
-/// All active extractors, merged at extraction time.
+/// Active extractors for the current workspace.
 pub struct ActiveExtractor {
     sources: Vec<(ExtractorKind, ExtractFn)>,
 }
 
 impl ActiveExtractor {
-    /// Extract entries from all available sources and merge by timestamp.
-    ///
-    /// Returns a list of which sources contributed entries (for diagnostics)
-    /// alongside the merged, redacted entries.
+    /// Extract, merge, and redact entries from every detected source.
     pub fn extract_all(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> ExtractResult {
         let mut all_entries: Vec<PromptEntry> = Vec::new();
         let mut contributing: Vec<(ExtractorKind, usize)> = Vec::new();
@@ -82,13 +78,13 @@ impl ActiveExtractor {
         Ok((contributing, redact_entries(all_entries)))
     }
 
-    /// Primary source kind — `None` if no supported tool was detected.
+    /// The first detected source, if any.
     pub fn primary_kind(&self) -> Option<ExtractorKind> {
         self.sources.first().map(|(k, _)| *k)
     }
 }
 
-/// Apply redaction to the prompt field of every entry.
+/// Apply prompt redaction to every extracted entry.
 fn redact_entries(entries: Vec<PromptEntry>) -> Vec<PromptEntry> {
     entries
         .into_iter()
@@ -100,7 +96,7 @@ fn redact_entries(entries: Vec<PromptEntry>) -> Vec<PromptEntry> {
         .collect()
 }
 
-/// Detect and return all available extractors for `project_root`.
+/// Detect every extractor that appears available for `project_root`.
 pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
     let mut sources: Vec<(ExtractorKind, ExtractFn)> = Vec::new();
 

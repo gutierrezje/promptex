@@ -1,7 +1,8 @@
-//! Extraction scope — what range of work to extract prompts for.
+//! Scope selection for `pmtx extract`.
 //!
-//! Scope is determined either from explicit CLI flags or by applying smart
-//! defaults based on the current git state.
+//! The CLI accepts explicit scope flags, but most runs rely on git-aware
+//! defaults. This module resolves those inputs into a single `ExtractionScope`
+//! that downstream code can turn into commits, files, and a time window.
 
 use super::git;
 use anyhow::{bail, Result};
@@ -26,7 +27,7 @@ pub enum ExtractionScope {
     SinceTime(DateTime<Utc>),
 }
 
-/// CLI flags that control scope selection, passed in from `commands::extract`.
+/// CLI flags that influence scope selection.
 pub struct ScopeFlags {
     pub uncommitted: bool,
     pub commits: Option<usize>,
@@ -36,20 +37,8 @@ pub struct ScopeFlags {
     pub since_duration: Option<String>,
 }
 
-/// Determine the extraction scope.
-///
-/// Explicit flags take priority in this order:
-/// 1. `--uncommitted`
-/// 2. `--since-commit <HASH>`
-/// 3. `--commits <N>`
-/// 4. `--branch-lifetime`
-///
-/// If no flags are set, smart defaults apply:
-/// - Feature branch → `BranchLifetime` (since diverge from mainline)
-/// - Mainline with uncommitted changes → `Uncommitted`
-/// - Mainline with no uncommitted changes → `LastNCommits(1)`
+/// Resolve CLI flags and git state into a concrete extraction scope.
 pub fn determine_scope(flags: &ScopeFlags) -> Result<ExtractionScope> {
-    // Explicit flags — checked in priority order
     if flags.uncommitted {
         return Ok(ExtractionScope::Uncommitted);
     }
@@ -72,7 +61,6 @@ pub fn determine_scope(flags: &ScopeFlags) -> Result<ExtractionScope> {
         });
     }
 
-    // Smart defaults
     let branch = git::current_branch()?;
 
     if git::is_mainline_branch(&branch) {
@@ -90,10 +78,7 @@ pub fn determine_scope(flags: &ScopeFlags) -> Result<ExtractionScope> {
     }
 }
 
-/// Parse a human duration string into a `DateTime<Utc>` representing `now - duration`.
-///
-/// Supported units: `m` (minutes), `h` (hours), `d` (days), `w` (weeks).
-/// Example: `"2h"` → two hours ago, `"30m"` → thirty minutes ago.
+/// Parse a duration like `2h` or `3w` into a UTC timestamp relative to now.
 fn parse_duration_str(s: &str) -> Result<DateTime<Utc>> {
     if s.is_empty() {
         bail!("Duration string is empty — expected format like '2h', '30m', '1d', '3w'");
@@ -127,7 +112,7 @@ mod tests {
     fn test_explicit_uncommitted_flag_wins() {
         let flags = ScopeFlags {
             uncommitted: true,
-            commits: Some(5), // would be Commits(5) without the uncommitted flag
+            commits: Some(5),
             since_commit: None,
             branch_lifetime: false,
             since_duration: None,
@@ -164,8 +149,6 @@ mod tests {
 
     #[test]
     fn test_smart_default_runs_without_error() {
-        // Smart default calls into git — just verify it doesn't panic or error
-        // in a normal repo context (which the test runner provides).
         let flags = ScopeFlags {
             uncommitted: false,
             commits: None,
@@ -176,14 +159,11 @@ mod tests {
         determine_scope(&flags).unwrap();
     }
 
-    // ── parse_duration_str ────────────────────────────────────────────────────
-
     #[test]
     fn test_parse_duration_minutes() {
         let before = Utc::now() - Duration::minutes(30);
         let result = parse_duration_str("30m").unwrap();
         let after = Utc::now() - Duration::minutes(30);
-        // Result should be between before and after (within a second of 30m ago)
         assert!(result >= before - Duration::seconds(1));
         assert!(result <= after + Duration::seconds(1));
     }
@@ -248,7 +228,6 @@ mod tests {
 
     #[test]
     fn test_since_duration_wins_over_since_commit() {
-        // --since has higher priority than --since-commit per the plan
         let flags = ScopeFlags {
             uncommitted: false,
             commits: None,

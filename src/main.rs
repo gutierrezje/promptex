@@ -43,7 +43,7 @@ enum Commands {
         since: Option<String>,
     },
 
-    /// Check if your AI tool is natively supported (exit 0 = yes, exit 1 = unsupported)
+    /// Check whether prompt extraction appears available in this repo
     Check,
 
     /// Show current project prompt extraction status
@@ -60,7 +60,7 @@ enum Commands {
 enum ProjectsAction {
     /// List all tracked projects
     List,
-    /// Remove a specific project by ID
+    /// Remove a project by ID or 1-based list index
     Remove { project_id: String },
 }
 
