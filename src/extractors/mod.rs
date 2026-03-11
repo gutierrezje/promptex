@@ -48,7 +48,7 @@ impl ExtractorKind {
 
     pub fn readiness(&self) -> &'static str {
         match self {
-            Self::ClaudeCode => "native",
+            Self::ClaudeCode => "supported",
             Self::Codex => "WIP",
         }
     }

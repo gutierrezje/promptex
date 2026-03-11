@@ -59,7 +59,7 @@ Output is always structured JSON. Feed it to an agent (via the skill) to get PR-
 ### Other commands
 
 ```bash
-pmtx check                   # Check if your AI tool is natively supported (exit 0 = yes, exit 1 = unsupported)
+pmtx check                   # Check if your AI tool is supported (exit 0 = yes, exit 1 = unsupported)
 pmtx status                  # Show current project info and extraction count
 pmtx projects list           # List all tracked projects
 pmtx projects remove <N|id>  # Remove a project by number or full ID
@@ -69,13 +69,11 @@ pmtx projects remove <N|id>  # Remove a project by number or full ID
 
 | Tool | Status |
 |------|--------|
-| Claude Code | ✅ Native |
+| Claude Code | ✅ Supported |
 | Codex CLI / Desktop | 🚧 WIP |
-| OpenCode | ⏳ Planned (SQLite rewrite needed) |
+| OpenCode | ⏳ Planned |
 | Cursor | ⏳ Planned |
 | GitHub Copilot | ⏳ Planned |
-
-`Native` means stable direct log extraction with no manual setup. `WIP` means extraction exists but is not yet reliable enough to position as production-ready.
 
 ## Why Use PromptEx?
 

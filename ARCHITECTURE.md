@@ -76,7 +76,7 @@ This is the lens everything else is filtered through.
 
 ### 3. Extraction (`src/extractors/`)
 
-Each supported AI tool has a dedicated extractor that reads its native log format:
+Each supported AI tool has a dedicated extractor that reads its direct log format:
 
 **Claude Code** (`claude_code.rs`)
 - Reads `~/.claude/projects/{slug}/*.jsonl`
