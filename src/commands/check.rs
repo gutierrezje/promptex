@@ -28,9 +28,7 @@ pub fn execute() -> Result<()> {
         }
         None => {
             eprintln!("⚠ No supported tool detected in your current environment.");
-            eprintln!(
-                "  pmtx currently supports Claude Code; Codex support is still WIP."
-            );
+            eprintln!("  pmtx currently supports Claude Code; Codex support is still WIP.");
             std::process::exit(1);
         }
     }
