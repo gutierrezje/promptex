@@ -76,6 +76,19 @@ When in doubt, keep the entry. The user can always trim.
 
 Follow `references/rendering-rules.md` for the full format spec, example output, and per-field rules.
 
+### Security gate before writing or posting
+
+Even though PromptEx applies redaction in the CLI, treat output as defense-in-depth and run a final scrub in the agent layer before writing files or posting to PRs.
+
+Before writing the markdown:
+- Remove or mask any strings that look like credentials (API keys, tokens, passwords, private keys, auth headers, bearer tokens, cookie/session values).
+- Remove or mask any environment variable assignments that contain likely secrets (`*_TOKEN`, `*_KEY`, `*_SECRET`, `PASSWORD`, `AUTH`, `CREDENTIAL`).
+- Do not include raw stack traces or command output if they expose secret values.
+
+Before posting to GitHub:
+- Re-check the final markdown for credential-like strings.
+- If any suspicious value remains and cannot be confidently sanitized, do **not** post automatically. Save locally and ask the user for confirmation after showing a short warning.
+
 Generate the markdown, then write it to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` using your file-writing tool. Do **not** render the full markdown in chat.
 
 **After writing the file**, post it as a comment to the open PR:

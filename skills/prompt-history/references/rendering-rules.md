@@ -46,6 +46,9 @@
 ## Per-field rules
 
 - Use `→` (not `->`) for files, commit, and Re: lines
+- Never include plaintext credentials or secrets in rendered output. Mask credential-like values as `[REDACTED]`.
+- If a line contains likely secret material (tokens, API keys, passwords, private keys, bearer/auth headers, session cookies), either redact that fragment or omit the line.
+- If uncertain whether a value is sensitive, treat it as sensitive and redact.
 - If `assistant_context` is present and its last sentence contains a `?`, add a `→ Re:` line after the blockquote (last sentence, capped at 120 chars): `→ Re: *"Want me to fix pr_format.rs with that approach?"*`. Omit if the context tail is a declarative statement — it adds noise. Before extracting the last sentence, strip any lines that consist entirely of backtick/dash separator characters (e.g. `` `─────────────────────────────────────────────────` ``).
 - Omit files line if `files_touched` is empty
 - Omit commit line if `commit` field is empty or not a hex hash ≥ 7 chars
@@ -53,3 +56,8 @@
 - Show at most 8 files in the Session Details modified files line; append `+N more` if there are more
 - Omit empty category sections entirely
 - Duration format: `< 1m`, `32m`, `1h 46m`, `2h`
+
+## Posting safety
+
+- Perform a final scan of the completed markdown before writing and again before posting to GitHub.
+- If unresolved credential-like text remains, do not auto-post. Save locally and ask the user to confirm or sanitize first.
