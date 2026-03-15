@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::Path;
 
-use crate::prompt::PromptEntry;
+use super::ExtractorOutput;
 
 /// A source that can produce prompt entries from an AI tool's session logs.
 pub trait PromptExtractor {
@@ -13,8 +13,6 @@ pub trait PromptExtractor {
     where
         Self: Sized;
 
-    /// Extract prompt entries whose timestamps fall within `[since, until]`.
-    ///
-    /// Entries are returned in chronological order (oldest first).
-    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<PromptEntry>>;
+    /// Extract prompt entries and non-fatal warnings within `[since, until]`.
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<ExtractorOutput>;
 }

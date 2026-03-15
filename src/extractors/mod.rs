@@ -20,6 +20,7 @@ pub mod traits;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::curation::redact::redact;
@@ -28,8 +29,42 @@ use claude_code::ClaudeCodeExtractor;
 use codex::CodexExtractor;
 use traits::PromptExtractor;
 
-type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<Vec<PromptEntry>>>;
-type ExtractResult = Result<(Vec<(ExtractorKind, usize)>, Vec<PromptEntry>)>;
+type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<ExtractorOutput>>;
+type ExtractResult = Result<(
+    Vec<(ExtractorKind, usize)>,
+    Vec<PromptEntry>,
+    ExtractionDiagnostics,
+)>;
+
+/// Extracted entries and non-fatal warnings from a single source run.
+#[derive(Debug, Default)]
+pub struct ExtractorOutput {
+    pub entries: Vec<PromptEntry>,
+    pub warnings: Vec<String>,
+}
+
+/// Non-fatal warning captured during extraction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtractionWarning {
+    pub source: ExtractorKind,
+    pub detail: String,
+}
+
+/// Diagnostics across all extractor runs.
+#[derive(Debug, Default, Clone)]
+pub struct ExtractionDiagnostics {
+    pub warnings: Vec<ExtractionWarning>,
+}
+
+impl ExtractionDiagnostics {
+    pub fn warning_count_by_source(&self) -> BTreeMap<ExtractorKind, usize> {
+        let mut counts = BTreeMap::new();
+        for warning in &self.warnings {
+            *counts.entry(warning.source).or_insert(0) += 1;
+        }
+        counts
+    }
+}
 
 /// Extractor source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +89,18 @@ impl ExtractorKind {
     }
 }
 
+impl Ord for ExtractorKind {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.label().cmp(other.label())
+    }
+}
+
+impl PartialOrd for ExtractorKind {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// Active extractors for the current workspace.
 pub struct ActiveExtractor {
     sources: Vec<(ExtractorKind, ExtractFn)>,
@@ -64,18 +111,29 @@ impl ActiveExtractor {
     pub fn extract_all(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> ExtractResult {
         let mut all_entries: Vec<PromptEntry> = Vec::new();
         let mut contributing: Vec<(ExtractorKind, usize)> = Vec::new();
+        let mut diagnostics = ExtractionDiagnostics::default();
 
         for (kind, extractor) in &self.sources {
-            let entries = extractor(since, until)?;
-            if !entries.is_empty() {
-                contributing.push((*kind, entries.len()));
-                all_entries.extend(entries);
+            let output = extractor(since, until)?;
+
+            if !output.entries.is_empty() {
+                contributing.push((*kind, output.entries.len()));
+                all_entries.extend(output.entries);
             }
+
+            diagnostics
+                .warnings
+                .extend(output.warnings.into_iter().map(|detail| ExtractionWarning {
+                    source: *kind,
+                    detail,
+                }));
         }
 
-        all_entries.sort_by_key(|e| e.timestamp);
+        if !all_entries.is_empty() {
+            all_entries.sort_by_key(|e| e.timestamp);
+        }
 
-        Ok((contributing, redact_entries(all_entries)))
+        Ok((contributing, redact_entries(all_entries), diagnostics))
     }
 
     /// The first detected source, if any.
@@ -158,32 +216,52 @@ mod tests {
             sources: vec![
                 (
                     ExtractorKind::ClaudeCode,
-                    Box::new(|_, _| Ok(vec![sample_entry("from claude")])),
+                    Box::new(|_, _| {
+                        Ok(ExtractorOutput {
+                            entries: vec![sample_entry("from claude")],
+                            warnings: Vec::new(),
+                        })
+                    }),
                 ),
                 (
                     ExtractorKind::Codex,
-                    Box::new(|_, _| Ok(vec![sample_entry("from codex")])),
+                    Box::new(|_, _| {
+                        Ok(ExtractorOutput {
+                            entries: vec![sample_entry("from codex")],
+                            warnings: Vec::new(),
+                        })
+                    }),
                 ),
             ],
         };
 
-        let (contributing, entries) = ex.extract_all(since, until).unwrap();
+        let (contributing, entries, diagnostics) = ex.extract_all(since, until).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(contributing.len(), 2);
         assert_eq!(contributing[0].0, ExtractorKind::ClaudeCode);
         assert_eq!(contributing[1].0, ExtractorKind::Codex);
+        assert!(diagnostics.warnings.is_empty());
     }
 
     #[test]
     fn extract_all_returns_empty_when_nothing_found() {
         let (since, until) = window();
         let ex = ActiveExtractor {
-            sources: vec![(ExtractorKind::Codex, Box::new(|_, _| Ok(Vec::new())))],
+            sources: vec![(
+                ExtractorKind::Codex,
+                Box::new(|_, _| {
+                    Ok(ExtractorOutput {
+                        entries: Vec::new(),
+                        warnings: Vec::new(),
+                    })
+                }),
+            )],
         };
 
-        let (contributing, entries) = ex.extract_all(since, until).unwrap();
+        let (contributing, entries, diagnostics) = ex.extract_all(since, until).unwrap();
         assert!(entries.is_empty());
         assert!(contributing.is_empty());
+        assert!(diagnostics.warnings.is_empty());
     }
 
     #[test]
@@ -195,7 +273,15 @@ mod tests {
     #[test]
     fn primary_kind_returns_first_source() {
         let ex = ActiveExtractor {
-            sources: vec![(ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(vec![])))],
+            sources: vec![(
+                ExtractorKind::ClaudeCode,
+                Box::new(|_, _| {
+                    Ok(ExtractorOutput {
+                        entries: vec![],
+                        warnings: vec![],
+                    })
+                }),
+            )],
         };
         assert_eq!(ex.primary_kind(), Some(ExtractorKind::ClaudeCode));
     }
@@ -212,12 +298,15 @@ mod tests {
                     entry.assistant_context = Some(
                         "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890".to_string(),
                     );
-                    Ok(vec![entry])
+                    Ok(ExtractorOutput {
+                        entries: vec![entry],
+                        warnings: vec![],
+                    })
                 }),
             )],
         };
 
-        let (_, entries) = ex.extract_all(since, until).unwrap();
+        let (_, entries, _) = ex.extract_all(since, until).unwrap();
         assert_eq!(entries.len(), 1);
 
         let entry = &entries[0];
@@ -226,5 +315,43 @@ mod tests {
         let ctx = entry.assistant_context.as_ref().unwrap();
         assert!(ctx.contains("[REDACTED:bearer_token]"));
         assert!(!ctx.contains("abcdefghijklmnopqrstuvwxyz1234567890"));
+    }
+
+    #[test]
+    fn extract_all_returns_non_fatal_warnings() {
+        let (since, until) = window();
+        let ex = ActiveExtractor {
+            sources: vec![
+                (
+                    ExtractorKind::ClaudeCode,
+                    Box::new(|_, _| {
+                        Ok(ExtractorOutput {
+                            entries: vec![sample_entry("from claude")],
+                            warnings: vec!["bad json line in a.jsonl:12".to_string()],
+                        })
+                    }),
+                ),
+                (
+                    ExtractorKind::Codex,
+                    Box::new(|_, _| {
+                        Ok(ExtractorOutput {
+                            entries: vec![],
+                            warnings: vec![
+                                "failed to parse rollout file b.jsonl".to_string(),
+                                "failed to parse rollout file c.jsonl".to_string(),
+                            ],
+                        })
+                    }),
+                ),
+            ],
+        };
+
+        let (_, entries, diagnostics) = ex.extract_all(since, until).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.warnings.len(), 3);
+        let counts = diagnostics.warning_count_by_source();
+        assert_eq!(counts.get(&ExtractorKind::ClaudeCode), Some(&1));
+        assert_eq!(counts.get(&ExtractorKind::Codex), Some(&2));
     }
 }

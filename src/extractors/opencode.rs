@@ -19,6 +19,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use super::traits::PromptExtractor;
+use super::ExtractorOutput;
 use crate::prompt::PromptEntry;
 
 pub struct OpenCodeExtractor {
@@ -58,7 +59,7 @@ impl PromptExtractor for OpenCodeExtractor {
         Self::default_message_dir().is_some()
     }
 
-    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<PromptEntry>> {
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<ExtractorOutput> {
         let mut entries = Vec::new();
 
         let mut files: Vec<PathBuf> = fs::read_dir(&self.message_dir)
@@ -114,7 +115,10 @@ impl PromptExtractor for OpenCodeExtractor {
             i += 1;
         }
 
-        Ok(entries)
+        Ok(ExtractorOutput {
+            entries,
+            warnings: Vec::new(),
+        })
     }
 }
 

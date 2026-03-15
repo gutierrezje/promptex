@@ -15,6 +15,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::traits::PromptExtractor;
+use super::ExtractorOutput;
 use crate::prompt::PromptEntry;
 
 pub struct ClaudeCodeExtractor {
@@ -53,8 +54,9 @@ impl PromptExtractor for ClaudeCodeExtractor {
         Self::log_dir_for(project_root).is_some()
     }
 
-    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<PromptEntry>> {
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<ExtractorOutput> {
         let mut entries = Vec::new();
+        let mut warnings = Vec::new();
 
         let mut session_files: Vec<PathBuf> = fs::read_dir(&self.project_log_dir)
             .context("Failed to read Claude Code project log directory")?
@@ -66,15 +68,28 @@ impl PromptExtractor for ClaudeCodeExtractor {
         session_files.sort(); // chronological by filename (sessionId is time-based)
 
         for session_file in session_files {
-            let mut file_entries =
-                extract_from_session(&session_file, since, until, &self.project_root)
-                    .unwrap_or_default();
-            entries.append(&mut file_entries);
+            match extract_from_session(&session_file, since, until, &self.project_root) {
+                Ok(mut session_out) => {
+                    entries.append(&mut session_out.entries);
+                    warnings.append(&mut session_out.warnings);
+                }
+                Err(err) => {
+                    warnings.push(format!(
+                        "{}: failed to extract session ({err})",
+                        session_file.display()
+                    ));
+                }
+            }
         }
 
         entries.sort_by_key(|e| e.timestamp);
-        Ok(entries)
+        Ok(ExtractorOutput { entries, warnings })
     }
+}
+
+struct SessionExtractOutput {
+    entries: Vec<PromptEntry>,
+    warnings: Vec<String>,
 }
 
 /// Max characters to store from the preceding assistant turn.
@@ -183,19 +198,25 @@ fn extract_from_session(
     since: DateTime<Utc>,
     until: DateTime<Utc>,
     project_root: &Path,
-) -> Result<Vec<PromptEntry>> {
+) -> Result<SessionExtractOutput> {
     let file = File::open(path).context("Failed to open session file")?;
     let reader = BufReader::new(file);
 
     let mut raw_messages: Vec<RawMessage> = Vec::new();
+    let mut warnings = Vec::new();
 
-    for line in reader.lines() {
+    for (idx, line) in reader.lines().enumerate() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
-        if let Ok(msg) = serde_json::from_str::<RawMessage>(&line) {
-            raw_messages.push(msg);
+        match serde_json::from_str::<RawMessage>(&line) {
+            Ok(msg) => raw_messages.push(msg),
+            Err(err) => warnings.push(format!(
+                "{}:{} invalid JSON line skipped ({err})",
+                path.display(),
+                idx + 1
+            )),
         }
     }
 
@@ -240,7 +261,7 @@ fn extract_from_session(
         i += 1;
     }
 
-    Ok(entries)
+    Ok(SessionExtractOutput { entries, warnings })
 }
 
 /// Extract plain text from a user message.
@@ -439,6 +460,8 @@ fn with_timestamp(mut entry: PromptEntry, ts: DateTime<Utc>) -> PromptEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+    use std::io::Write;
 
     #[test]
     fn test_is_available_false_for_nonexistent_project() {
@@ -626,5 +649,31 @@ mod tests {
             extract_file_from_tool("str_replace_based_edit_tool", Some(&cli_input)),
             Some("src/lib.rs".to_string())
         );
+    }
+
+    #[test]
+    fn test_extract_reports_bad_jsonl_lines() {
+        let log_dir = tempfile::TempDir::new().unwrap();
+        let session = log_dir.path().join("session-1.jsonl");
+        let mut f = std::fs::File::create(&session).unwrap();
+
+        writeln!(f, "not-json").unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"user","timestamp":"2026-03-01T23:47:54Z","gitBranch":"main","message":{{"role":"user","content":"extract diagnostics"}}}}"#
+        )
+        .unwrap();
+
+        let extractor =
+            ClaudeCodeExtractor::new(log_dir.path().to_path_buf(), log_dir.path().to_path_buf());
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 3, 2, 0, 0, 0).unwrap();
+
+        let output = extractor.extract(since, until).unwrap();
+        assert_eq!(output.entries.len(), 1);
+        assert_eq!(output.entries[0].prompt, "extract diagnostics");
+        assert_eq!(output.warnings.len(), 1);
+        assert!(output.warnings[0].contains("invalid JSON line skipped"));
+        assert!(output.warnings[0].contains("session-1.jsonl"));
     }
 }

@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::analysis::correlation::{build_git_context, filter_by_scope};
 use crate::analysis::scope::{determine_scope, ExtractionScope, ScopeFlags};
-use crate::extractors;
+use crate::extractors::{self, ExtractionDiagnostics};
 use crate::output::json_format;
 use crate::project_id;
 
@@ -69,7 +69,7 @@ pub fn execute(
         .unwrap_or("none");
     eprintln!("\n🔎 Loading prompts ({kind_label})...");
 
-    let (contributing, raw_entries) = extractor.extract_all(ctx.since, ctx.until)?;
+    let (contributing, raw_entries, diagnostics) = extractor.extract_all(ctx.since, ctx.until)?;
     for (kind, count) in &contributing {
         eprintln!("  ✓ {} — {count} entries", kind.label());
     }
@@ -77,6 +77,8 @@ pub fn execute(
         eprintln!("  ✓ No entries found");
     }
     eprintln!("  ✓ {} total in time range", raw_entries.len());
+
+    print_warning_summary(&diagnostics);
 
     let entries = filter_by_scope(&raw_entries, &ctx);
     eprintln!("  ✓ Filtered to {} relevant entries", entries.len());
@@ -90,4 +92,28 @@ pub fn execute(
     println!("{out}");
 
     Ok(())
+}
+
+fn print_warning_summary(diagnostics: &ExtractionDiagnostics) {
+    if diagnostics.warnings.is_empty() {
+        return;
+    }
+
+    eprintln!(
+        "  ⚠ {} non-fatal extraction warning(s)",
+        diagnostics.warnings.len()
+    );
+
+    for (source, count) in diagnostics.warning_count_by_source() {
+        eprintln!("    - {}: {count}", source.label());
+    }
+
+    for warning in diagnostics.warnings.iter().take(3) {
+        eprintln!("    · {}: {}", warning.source.label(), warning.detail);
+    }
+
+    let remaining = diagnostics.warnings.len().saturating_sub(3);
+    if remaining > 0 {
+        eprintln!("    · ... and {remaining} more");
+    }
 }

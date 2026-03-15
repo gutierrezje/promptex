@@ -14,6 +14,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::traits::PromptExtractor;
+use super::ExtractorOutput;
 use crate::prompt::PromptEntry;
 
 pub struct CodexExtractor {
@@ -45,17 +46,33 @@ impl PromptExtractor for CodexExtractor {
         Self::default_sessions_dir().is_some()
     }
 
-    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<Vec<PromptEntry>> {
+    fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<ExtractorOutput> {
         let mut entries = Vec::new();
+        let mut warnings = Vec::new();
 
         for file in collect_jsonl_files(&self.sessions_dir) {
-            let mut file_entries = extract_from_rollout(&file, since, until).unwrap_or_default();
-            entries.append(&mut file_entries);
+            match extract_from_rollout(&file, since, until) {
+                Ok(mut rollout_out) => {
+                    entries.append(&mut rollout_out.entries);
+                    warnings.append(&mut rollout_out.warnings);
+                }
+                Err(err) => {
+                    warnings.push(format!(
+                        "{}: failed to extract rollout ({err})",
+                        file.display()
+                    ));
+                }
+            }
         }
 
         entries.sort_by_key(|e| e.timestamp);
-        Ok(entries)
+        Ok(ExtractorOutput { entries, warnings })
     }
+}
+
+struct RolloutExtractOutput {
+    entries: Vec<PromptEntry>,
+    warnings: Vec<String>,
 }
 
 fn collect_jsonl_files(dir: &Path) -> Vec<PathBuf> {
@@ -81,23 +98,33 @@ fn extract_from_rollout(
     path: &Path,
     since: DateTime<Utc>,
     until: DateTime<Utc>,
-) -> Result<Vec<PromptEntry>> {
+) -> Result<RolloutExtractOutput> {
     let file = File::open(path).context("Failed to open Codex session file")?;
     let reader = BufReader::new(file);
 
     let mut lines: Vec<Value> = Vec::new();
-    for line in reader.lines() {
+    let mut warnings = Vec::new();
+
+    for (idx, line) in reader.lines().enumerate() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
-        if let Ok(v) = serde_json::from_str::<Value>(&line) {
-            lines.push(v);
+        match serde_json::from_str::<Value>(&line) {
+            Ok(v) => lines.push(v),
+            Err(err) => warnings.push(format!(
+                "{}:{} invalid JSON line skipped ({err})",
+                path.display(),
+                idx + 1
+            )),
         }
     }
 
     if lines.is_empty() {
-        return Ok(Vec::new());
+        return Ok(RolloutExtractOutput {
+            entries: Vec::new(),
+            warnings,
+        });
     }
 
     let session_ts_fallback = parse_session_timestamp(&lines[0], path);
@@ -135,7 +162,7 @@ fn extract_from_rollout(
         i += 1;
     }
 
-    Ok(entries)
+    Ok(RolloutExtractOutput { entries, warnings })
 }
 
 /// Parse the session timestamp from the `session_meta` payload, falling back to
@@ -624,7 +651,8 @@ mod tests {
 
         let since = Utc.with_ymd_and_hms(2026, 1, 15, 9, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 1, 15, 11, 0, 0).unwrap();
-        let entries = extract_from_rollout(&path, since, until).unwrap();
+        let output = extract_from_rollout(&path, since, until).unwrap();
+        let entries = output.entries;
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].prompt, "add auth validation");
@@ -652,7 +680,8 @@ mod tests {
 
         let since = Utc.with_ymd_and_hms(2026, 3, 1, 20, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap();
-        let entries = extract_from_rollout(&path, since, until).unwrap();
+        let output = extract_from_rollout(&path, since, until).unwrap();
+        let entries = output.entries;
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].prompt, "add a one-line comment");
@@ -674,7 +703,8 @@ mod tests {
 
         let since = Utc.with_ymd_and_hms(2026, 1, 16, 0, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 1, 16, 1, 0, 0).unwrap();
-        let entries = extract_from_rollout(&path, since, until).unwrap();
+        let output = extract_from_rollout(&path, since, until).unwrap();
+        let entries = output.entries;
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].prompt, "in range prompt");
@@ -701,8 +731,33 @@ mod tests {
 
         let since = Utc.with_ymd_and_hms(2026, 1, 16, 0, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 1, 17, 0, 0, 0).unwrap();
-        let entries = extract_from_rollout(&path, since, until).unwrap();
+        let output = extract_from_rollout(&path, since, until).unwrap();
+        let entries = output.entries;
 
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_extract_reports_bad_jsonl_lines() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join("2026").join("03").join("01");
+        std::fs::create_dir_all(&nested).unwrap();
+        let path = nested.join("rollout-2026-03-01T13-56-17-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, "{{not-json").unwrap();
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-03-01T21:56:17Z","cwd":"/proj","originator":"Codex Desktop","source":"vscode","model_provider":"openai"}}}}"#).unwrap();
+        writeln!(f, r#"{{"timestamp":"2026-03-01T21:58:00Z","type":"event_msg","payload":{{"type":"user_message","message":"collect diagnostics"}}}}"#).unwrap();
+
+        let extractor = CodexExtractor::new(dir.path().to_path_buf());
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 21, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap();
+
+        let output = extractor.extract(since, until).unwrap();
+        assert_eq!(output.entries.len(), 1);
+        assert_eq!(output.entries[0].prompt, "collect diagnostics");
+        assert_eq!(output.warnings.len(), 1);
+        assert!(output.warnings[0].contains("invalid JSON line skipped"));
+        assert!(output.warnings[0].contains("rollout-2026-03-01T13-56-17-testuuid.jsonl"));
     }
 }
