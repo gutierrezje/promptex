@@ -37,8 +37,18 @@ pmtx extract [scope-flags]
 ```
 
 This outputs structured JSON containing the curated entries. You then:
-1. **Categorize** each entry into one of three sections (see below)
-2. **Render** the final PR markdown — see `references/rendering-rules.md` for the full format spec
+1. **Categorize** entries into Investigation, Solution, or Testing
+2. **Render** PR markdown using `references/rendering-rules.md`
+
+### Empty-result handling
+
+`pmtx extract` always returns JSON. If `entries` is an empty array, treat that as a successful extraction with no in-scope prompts.
+
+For empty results:
+- Do **not** treat this as unsupported-tool or parse failure.
+- Do **not** generate or post empty PR markdown by default.
+- Return a short summary with scope-widening suggestions (`--since 2h`, `--since 1d`, `--branch-lifetime`, `--since-commit <hash>`).
+- Only post a placeholder comment if the user explicitly asks.
 
 ### Choosing a scope
 
@@ -57,18 +67,18 @@ If the user provided flags, use them. Otherwise infer from context:
 
 Assign each entry to the most fitting section:
 
-- **Investigation** — exploring, understanding, researching: reading code, explaining a design, asking what something does, looking into an error, comparing approaches
-- **Solution** — implementing, fixing, changing: writing code, editing files, refactoring, debugging a fix, configuring something
-- **Testing** — verifying, validating: running tests, checking output, confirming a fix works, writing test cases
+- **Investigation** — exploring or understanding (reading code, design questions, error analysis)
+- **Solution** — implementing or changing behavior (edits, fixes, refactors, config)
+- **Testing** — validating behavior (tests, checks, verification)
 
-**`assistant_context`**: the tail of the preceding assistant turn is always captured when one exists. Use it to improve categorization for any entry — not just short ones. It's especially valuable for bare confirmations ("yes", "go ahead", "looks good") and for hybrid messages that begin with approval before adding new context ("yes fix that. also check..."). For example, "yes" with `assistant_context` ending in "Should I refactor the auth module to use JWT?" is a Solution approval, not noise.
+**`assistant_context`**: always use it when present, especially for short approvals ("yes", "go ahead") and mixed messages. It often disambiguates intent.
 
 **Noise entries to drop:**
-- Prompts invoking pmtx itself or asking to extract/summarize prompt history — these are meta, not development work (e.g. "extract my prompts", "add my prompts to the PR", the skill invocation turn)
-- Entries with no tool calls and no files touched, unless the prompt shows significant deliberation — architectural questions, design tradeoffs, or reasoning that visibly shaped what came next are worth keeping even without artifacts
-- Near-duplicate prompts (semantically the same ask, rephrased slightly) — keep the most recent version, which is usually the more refined one
+- Meta prompts about running pmtx itself (extract/summarize/invoke skill)
+- Entries with no tool calls and no files touched, unless they contain meaningful design reasoning
+- Near-duplicate prompts; keep the most recent version
 - Short replies with no meaningful tool calls and no clear proposal in `assistant_context`
-- Git/workflow housekeeping with no files touched — branch switches, pushes, merges, pull requests opened — these are overhead, not development work (e.g. "switch to main and push", "sorry I pulled, try again")
+- Git/workflow housekeeping with no files touched (switch/push/merge/PR admin)
 
 When in doubt, keep the entry. The user can always trim.
 
@@ -78,16 +88,12 @@ Follow `references/rendering-rules.md` for the full format spec, example output,
 
 ### Security gate before writing or posting
 
-Even though PromptEx applies redaction in the CLI, treat output as defense-in-depth and run a final scrub in the agent layer before writing files or posting to PRs.
+Apply defense-in-depth redaction at the skill layer before writing or posting.
 
-Before writing the markdown:
-- Remove or mask any strings that look like credentials (API keys, tokens, passwords, private keys, auth headers, bearer tokens, cookie/session values).
-- Remove or mask any environment variable assignments that contain likely secrets (`*_TOKEN`, `*_KEY`, `*_SECRET`, `PASSWORD`, `AUTH`, `CREDENTIAL`).
-- Do not include raw stack traces or command output if they expose secret values.
-
-Before posting to GitHub:
-- Re-check the final markdown for credential-like strings.
-- If any suspicious value remains and cannot be confidently sanitized, do **not** post automatically. Save locally and ask the user for confirmation after showing a short warning.
+- Mask credential-like strings (tokens, keys, passwords, private keys, auth headers, session values).
+- Mask secret-like env assignments (`*_TOKEN`, `*_KEY`, `*_SECRET`, `PASSWORD`, `AUTH`, `CREDENTIAL`).
+- If suspicious values remain, do **not** auto-post; save locally and ask for confirmation.
+- Follow `references/rendering-rules.md` posting safety rules.
 
 Generate the markdown, then write it to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` using your file-writing tool. Do **not** render the full markdown in chat.
 
@@ -138,8 +144,8 @@ Install the binary first:
 - In the promptex repo: `cargo install --path .`
 - Otherwise: see the project README for install instructions
 
-**`0 entries` or no output after filtering**
+**`entries` is empty (`"entries": []`)**
 The scope's time window may not align with your session. Try:
 - `--since 2h` or `--since 1d` to widen the search
 - `--branch-lifetime` to capture the full branch history
-- `--since-commit <hash>` to manually anchor the window
+- `--since-commit <hash>` to anchor the window manually

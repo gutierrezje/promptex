@@ -9,32 +9,26 @@
 <summary>N prompts over Xh Ym</summary>
 
 **Session Details**
-- Tools: Claude Code (claude-sonnet-4-6) - 5 prompts, Cursor - 1 prompt
-- Branch: `feature/auth-fix`
-- Time range: 2024-01-15 14:00 - 2024-01-15 16:00
-- Commits: `abc1234`, `def5678` (2 commits)
-- Modified files: `src/auth.rs`, `src/lib.rs`
+- Tools: Tool A (model) - N prompts, Tool B - M prompts
+- Branch: `feature/example`
+- Time range: YYYY-MM-DD HH:MM - YYYY-MM-DD HH:MM
+- Commits: `abc1234`, `def5678` (N commits)
+- Modified files: `path/a`, `path/b`
 
 ---
 
-### Investigation
+### Investigation / Solution / Testing
 
-**[14:05] (Claude Code · claude-sonnet-4-6)**
-> explain how the JWT validation middleware works
+**[HH:MM] (Tool · model)**
+> prompt text
 
----
-
-### Solution
-
-**[14:23] (Claude Code · claude-sonnet-4-6)**
-> implement JWT expiry checking in src/auth.rs
-
-→ Files: `src/auth.rs`, `src/middleware.rs`
+→ Re: *"Question from preceding assistant turn?"*
+→ Files: `path/a`, `path/b`
 → Commit: `abc1234`
 
 ---
 
-**Summary:** 6 prompts (2 investigation, 3 solution, 1 testing) · 1 tool
+**Summary:** N prompts (I investigation, S solution, T testing) · K tools
 
 </details>
 
@@ -46,10 +40,9 @@
 ## Per-field rules
 
 - Use `→` (not `->`) for files, commit, and Re: lines
-- Never include plaintext credentials or secrets in rendered output. Mask credential-like values as `[REDACTED]`.
-- If a line contains likely secret material (tokens, API keys, passwords, private keys, bearer/auth headers, session cookies), either redact that fragment or omit the line.
-- If uncertain whether a value is sensitive, treat it as sensitive and redact.
-- If `assistant_context` is present and its last sentence contains a `?`, add a `→ Re:` line after the blockquote (last sentence, capped at 120 chars): `→ Re: *"Want me to fix pr_format.rs with that approach?"*`. Omit if the context tail is a declarative statement — it adds noise. Before extracting the last sentence, strip any lines that consist entirely of backtick/dash separator characters (e.g. `` `─────────────────────────────────────────────────` ``).
+- Never include plaintext credentials. Redact credential-like values as `[REDACTED]`.
+- If uncertain whether a value is sensitive, redact it.
+- If `assistant_context` is present and its last sentence contains a `?`, add `→ Re:` after the blockquote (last sentence, max 120 chars). Omit for declarative context. Before extracting the last sentence, strip separator-only lines (e.g. `` `─────────────────────────────────────────────────` ``).
 - Omit files line if `files_touched` is empty
 - Omit commit line if `commit` field is empty or not a hex hash ≥ 7 chars
 - Show model in tool line only if `model` field is present: `(Tool · model)`
@@ -61,3 +54,4 @@
 
 - Perform a final scan of the completed markdown before writing and again before posting to GitHub.
 - If unresolved credential-like text remains, do not auto-post. Save locally and ask the user to confirm or sanitize first.
+- If input JSON has `"entries": []`, skip markdown rendering and posting by default; report a concise no-in-scope-prompts result instead.
