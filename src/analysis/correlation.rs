@@ -66,8 +66,9 @@ pub fn build_git_context(scope: &ExtractionScope) -> Result<GitContext> {
                 let anchor_time = all[0].timestamp;
                 (all[1..].to_vec(), anchor_time)
             } else {
-                let fallback =
-                    earliest_commit_time(&all).unwrap_or_else(|| until - Duration::days(7));
+                let fallback = earliest_commit_time(&all)
+                    .map(|t| t - Duration::hours(24))
+                    .unwrap_or_else(|| until - Duration::days(7));
                 (all, fallback)
             };
             let scope_files = collect_files(&scope_commits);
