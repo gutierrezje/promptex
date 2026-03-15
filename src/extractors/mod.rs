@@ -91,6 +91,10 @@ fn redact_entries(entries: Vec<PromptEntry>) -> Vec<PromptEntry> {
         .map(|mut e| {
             let (redacted, _) = redact(&e.prompt);
             e.prompt = redacted;
+            if let Some(ctx) = e.assistant_context.take() {
+                let (redacted_ctx, _) = redact(&ctx);
+                e.assistant_context = Some(redacted_ctx);
+            }
             e
         })
         .collect()
@@ -194,5 +198,33 @@ mod tests {
             sources: vec![(ExtractorKind::ClaudeCode, Box::new(|_, _| Ok(vec![])))],
         };
         assert_eq!(ex.primary_kind(), Some(ExtractorKind::ClaudeCode));
+    }
+
+    #[test]
+    fn extract_all_redacts_prompt_and_assistant_context() {
+        let (since, until) = window();
+        let ex = ActiveExtractor {
+            sources: vec![(
+                ExtractorKind::ClaudeCode,
+                Box::new(|_, _| {
+                    let mut entry =
+                        sample_entry("use this key: sk-abcdefghijklmnopqrstuvwxyz123456");
+                    entry.assistant_context = Some(
+                        "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890".to_string(),
+                    );
+                    Ok(vec![entry])
+                }),
+            )],
+        };
+
+        let (_, entries) = ex.extract_all(since, until).unwrap();
+        assert_eq!(entries.len(), 1);
+
+        let entry = &entries[0];
+        assert!(entry.prompt.contains("[REDACTED:api_key]"));
+
+        let ctx = entry.assistant_context.as_ref().unwrap();
+        assert!(ctx.contains("[REDACTED:bearer_token]"));
+        assert!(!ctx.contains("abcdefghijklmnopqrstuvwxyz1234567890"));
     }
 }

@@ -84,7 +84,6 @@ pub fn execute(
     if entries.is_empty() {
         eprintln!("\nNo prompts found for this scope.");
         eprintln!("Try widening the scope with --commits N or --branch-lifetime.");
-        return Ok(());
     }
 
     let out = json_format::render_json(&entries, &ctx, &scope)?;

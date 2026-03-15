@@ -61,3 +61,41 @@ fn scope_label(scope: &ExtractionScope) -> &'static str {
         ExtractionScope::SinceTime(_) => "since-time",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::{TimeZone, Utc};
+
+    use super::render_json;
+    use crate::analysis::correlation::GitContext;
+    use crate::analysis::git::Commit;
+    use crate::analysis::scope::ExtractionScope;
+    use crate::prompt::PromptEntry;
+
+    #[test]
+    fn render_json_includes_empty_entries_array() {
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 10, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 3, 1, 11, 0, 0).unwrap();
+        let ctx = GitContext {
+            scope_files: vec!["src/lib.rs".to_string()],
+            since,
+            until,
+            commits: vec![Commit {
+                short_hash: "abc1234".to_string(),
+                message: "feat: test commit".to_string(),
+                timestamp: since,
+                files: vec!["src/lib.rs".to_string()],
+            }],
+        };
+
+        let entries: Vec<PromptEntry> = Vec::new();
+        let json = render_json(&entries, &ctx, &ExtractionScope::LastNCommits(1)).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(value["scope"], "last-n-commits");
+        assert!(value["entries"].is_array());
+        assert_eq!(value["entries"].as_array().unwrap().len(), 0);
+        assert_eq!(value["scope_files"][0], "src/lib.rs");
+        assert_eq!(value["commits"][0]["short_hash"], "abc1234");
+    }
+}
