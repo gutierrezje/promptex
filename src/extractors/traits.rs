@@ -7,6 +7,11 @@ use std::path::Path;
 use super::ExtractorOutput;
 
 /// A source that can produce prompt entries from an AI tool's session logs.
+///
+/// The trait is intentionally flexible because log formats vary widely
+/// (per-project folders, global sessions, SQLite storage, etc.). When a field
+/// or behavior is unsupported by a tool, prefer leaving it empty rather than
+/// fabricating values.
 pub trait PromptExtractor {
     /// Returns true if this tool's logs exist and are readable for `project_root`.
     fn is_available(project_root: &Path) -> bool
@@ -14,5 +19,8 @@ pub trait PromptExtractor {
         Self: Sized;
 
     /// Extract prompt entries and non-fatal warnings within `[since, until]`.
+    ///
+    /// Callers will merge and sort results, so ordering is not required but
+    /// should be deterministic if possible.
     fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<ExtractorOutput>;
 }

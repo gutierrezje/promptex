@@ -80,6 +80,8 @@ struct RolloutExtractOutput {
     warnings: Vec<String>,
 }
 
+const MAX_CONTEXT_CHARS: usize = 300;
+
 fn collect_jsonl_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let Ok(entries) = fs::read_dir(dir) else {
@@ -195,7 +197,7 @@ fn extract_from_rollout(
 
             let (tool_calls, files_touched) = collect_turn_tools(&lines, i + 1);
 
-            let entry = PromptEntry::new(
+            let mut entry = PromptEntry::new(
                 "unknown".to_string(),
                 String::new(),
                 prompt,
@@ -204,6 +206,7 @@ fn extract_from_rollout(
                 "codex".to_string(),
                 model.clone(),
             );
+            entry.assistant_context = extract_preceding_assistant_context(&lines, i);
             entries.push(with_timestamp(entry, prompt_ts));
         }
 
@@ -287,6 +290,105 @@ fn parse_event_timestamp(event: &Value) -> Option<DateTime<Utc>> {
         })
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn extract_preceding_assistant_context(events: &[Value], before_idx: usize) -> Option<String> {
+    for event in events[..before_idx].iter().rev() {
+        if extract_user_message(event).is_some() {
+            break;
+        }
+        if let Some(text) = extract_assistant_text(event) {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let count = trimmed.chars().count();
+            let tail: String = if count <= MAX_CONTEXT_CHARS {
+                trimmed.to_string()
+            } else {
+                trimmed.chars().skip(count - MAX_CONTEXT_CHARS).collect()
+            };
+            return Some(tail);
+        }
+    }
+    None
+}
+
+fn extract_assistant_text(event: &Value) -> Option<String> {
+    match event.get("type").and_then(|v| v.as_str()) {
+        Some("response_item") => {
+            let payload = event.get("payload")?;
+            extract_response_item_text(payload)
+        }
+        Some("event_msg") => {
+            let payload = event.get("payload")?;
+            extract_event_msg_text(payload)
+        }
+        _ => None,
+    }
+}
+
+fn extract_response_item_text(payload: &Value) -> Option<String> {
+    let item_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    match item_type {
+        "message" | "assistant_message" | "output_text" => extract_text_value(
+            payload
+                .get("message")
+                .or_else(|| payload.get("content"))
+                .or_else(|| payload.get("text"))?,
+        ),
+        _ => None,
+    }
+}
+
+fn extract_event_msg_text(payload: &Value) -> Option<String> {
+    let event_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    match event_type {
+        "assistant_message" | "assistant_response" | "output_text" => extract_text_value(
+            payload
+                .get("message")
+                .or_else(|| payload.get("content"))
+                .or_else(|| payload.get("text"))?,
+        ),
+        _ => None,
+    }
+}
+
+fn extract_text_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            }
+        }
+        Value::Array(parts) => {
+            let text = parts
+                .iter()
+                .filter_map(extract_text_value)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Value::Object(map) => {
+            if let Some(v) = map
+                .get("text")
+                .or_else(|| map.get("content"))
+                .or_else(|| map.get("message"))
+            {
+                return extract_text_value(v);
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 /// Extract the prompt text from a `user_message` event_msg line.
@@ -776,6 +878,62 @@ mod tests {
         assert_eq!(
             entries[0].timestamp,
             Utc.with_ymd_and_hms(2026, 1, 16, 0, 10, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_extract_captures_assistant_context() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir
+            .path()
+            .join("rollout-2026-01-15T10-00-00-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-01-15T10:00:00Z","cwd":"/proj","originator":"cli","source":"cli"}}}}"#).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"first prompt"}}}}"#
+        )
+        .unwrap();
+        writeln!(f, r#"{{"type":"response_item","payload":{{"type":"message","content":"assistant reply"}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"second prompt"}}}}"#).unwrap();
+
+        let since = Utc.with_ymd_and_hms(2026, 1, 15, 9, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 1, 15, 11, 0, 0).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
+
+        assert_eq!(output.entries.len(), 2);
+        assert_eq!(
+            output.entries[1].assistant_context.as_deref(),
+            Some("assistant reply")
+        );
+    }
+
+    #[test]
+    fn test_extract_assistant_context_from_message_object() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir
+            .path()
+            .join("rollout-2026-01-15T10-00-00-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-01-15T10:00:00Z","cwd":"/proj","originator":"cli","source":"cli"}}}}"#).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"first prompt"}}}}"#
+        )
+        .unwrap();
+        writeln!(f, r#"{{"type":"response_item","payload":{{"type":"message","message":{{"role":"assistant","content":[{{"type":"output_text","text":"nested reply"}}]}}}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"second prompt"}}}}"#).unwrap();
+
+        let since = Utc.with_ymd_and_hms(2026, 1, 15, 9, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 1, 15, 11, 0, 0).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
+
+        assert_eq!(output.entries.len(), 2);
+        assert_eq!(
+            output.entries[1].assistant_context.as_deref(),
+            Some("nested reply")
         );
     }
 
