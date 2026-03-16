@@ -174,7 +174,7 @@ pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
 
     if CodexExtractor::is_available(project_root) {
         if let Some(sessions_dir) = CodexExtractor::default_sessions_dir() {
-            let ex = CodexExtractor::new(sessions_dir);
+            let ex = CodexExtractor::new(sessions_dir, project_root.to_path_buf());
             sources.push((
                 ExtractorKind::Codex,
                 Box::new(move |since, until| ex.extract(since, until)),

@@ -19,11 +19,15 @@ use crate::prompt::PromptEntry;
 
 pub struct CodexExtractor {
     sessions_dir: PathBuf,
+    project_root: PathBuf,
 }
 
 impl CodexExtractor {
-    pub fn new(sessions_dir: PathBuf) -> Self {
-        Self { sessions_dir }
+    pub fn new(sessions_dir: PathBuf, project_root: PathBuf) -> Self {
+        Self {
+            sessions_dir,
+            project_root,
+        }
     }
 
     pub fn default_sessions_dir() -> Option<PathBuf> {
@@ -49,9 +53,10 @@ impl PromptExtractor for CodexExtractor {
     fn extract(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Result<ExtractorOutput> {
         let mut entries = Vec::new();
         let mut warnings = Vec::new();
+        let project_root = canonicalize_dir(&self.project_root);
 
         for file in collect_jsonl_files(&self.sessions_dir) {
-            match extract_from_rollout(&file, since, until) {
+            match extract_from_rollout(&file, since, until, &project_root) {
                 Ok(mut rollout_out) => {
                     entries.append(&mut rollout_out.entries);
                     warnings.append(&mut rollout_out.warnings);
@@ -98,6 +103,7 @@ fn extract_from_rollout(
     path: &Path,
     since: DateTime<Utc>,
     until: DateTime<Utc>,
+    project_root: &Path,
 ) -> Result<RolloutExtractOutput> {
     let file = File::open(path).context("Failed to open Codex session file")?;
     let reader = BufReader::new(file);
@@ -127,9 +133,51 @@ fn extract_from_rollout(
         });
     }
 
-    let session_ts_fallback = parse_session_timestamp(&lines[0], path);
+    let Some(session_meta) = find_session_meta(&lines) else {
+        warnings.push(format!(
+            "{}: missing session_meta; skipping rollout",
+            path.display()
+        ));
+        return Ok(RolloutExtractOutput {
+            entries: Vec::new(),
+            warnings,
+        });
+    };
 
-    let model = extract_session_model(&lines[0]);
+    match extract_session_cwd(session_meta) {
+        Some(cwd) => {
+            if !cwd.is_absolute() {
+                warnings.push(format!(
+                    "{}: session cwd is not absolute; skipping rollout",
+                    path.display()
+                ));
+                return Ok(RolloutExtractOutput {
+                    entries: Vec::new(),
+                    warnings,
+                });
+            }
+            let cwd = canonicalize_dir(&cwd);
+            if !cwd.starts_with(project_root) {
+                return Ok(RolloutExtractOutput {
+                    entries: Vec::new(),
+                    warnings,
+                });
+            }
+        }
+        None => {
+            warnings.push(format!(
+                "{}: session cwd missing; skipping rollout",
+                path.display()
+            ));
+            return Ok(RolloutExtractOutput {
+                entries: Vec::new(),
+                warnings,
+            });
+        }
+    }
+
+    let session_ts_fallback = parse_session_timestamp(session_meta, path);
+    let model = extract_session_model(session_meta);
 
     let mut entries = Vec::new();
     let mut i = 1;
@@ -208,6 +256,23 @@ fn extract_session_model(meta: &Value) -> Option<String> {
         .and_then(|p| p.get("model_provider"))
         .and_then(|v| v.as_str())
         .map(String::from)
+}
+
+fn extract_session_cwd(meta: &Value) -> Option<PathBuf> {
+    meta.get("payload")
+        .and_then(|p| p.get("cwd"))
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from)
+}
+
+fn find_session_meta(lines: &[Value]) -> Option<&Value> {
+    lines
+        .iter()
+        .find(|line| line.get("type").and_then(|v| v.as_str()) == Some("session_meta"))
+}
+
+fn canonicalize_dir(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn parse_event_timestamp(event: &Value) -> Option<DateTime<Utc>> {
@@ -651,7 +716,7 @@ mod tests {
 
         let since = Utc.with_ymd_and_hms(2026, 1, 15, 9, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 1, 15, 11, 0, 0).unwrap();
-        let output = extract_from_rollout(&path, since, until).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
         let entries = output.entries;
 
         assert_eq!(entries.len(), 2);
@@ -680,7 +745,7 @@ mod tests {
 
         let since = Utc.with_ymd_and_hms(2026, 3, 1, 20, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap();
-        let output = extract_from_rollout(&path, since, until).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
         let entries = output.entries;
 
         assert_eq!(entries.len(), 2);
@@ -703,7 +768,7 @@ mod tests {
 
         let since = Utc.with_ymd_and_hms(2026, 1, 16, 0, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 1, 16, 1, 0, 0).unwrap();
-        let output = extract_from_rollout(&path, since, until).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
         let entries = output.entries;
 
         assert_eq!(entries.len(), 1);
@@ -731,7 +796,7 @@ mod tests {
 
         let since = Utc.with_ymd_and_hms(2026, 1, 16, 0, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 1, 17, 0, 0, 0).unwrap();
-        let output = extract_from_rollout(&path, since, until).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
         let entries = output.entries;
 
         assert!(entries.is_empty());
@@ -749,7 +814,7 @@ mod tests {
         writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-03-01T21:56:17Z","cwd":"/proj","originator":"Codex Desktop","source":"vscode","model_provider":"openai"}}}}"#).unwrap();
         writeln!(f, r#"{{"timestamp":"2026-03-01T21:58:00Z","type":"event_msg","payload":{{"type":"user_message","message":"collect diagnostics"}}}}"#).unwrap();
 
-        let extractor = CodexExtractor::new(dir.path().to_path_buf());
+        let extractor = CodexExtractor::new(dir.path().to_path_buf(), PathBuf::from("/proj"));
         let since = Utc.with_ymd_and_hms(2026, 3, 1, 21, 0, 0).unwrap();
         let until = Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap();
 
@@ -759,5 +824,68 @@ mod tests {
         assert_eq!(output.warnings.len(), 1);
         assert!(output.warnings[0].contains("invalid JSON line skipped"));
         assert!(output.warnings[0].contains("rollout-2026-03-01T13-56-17-testuuid.jsonl"));
+    }
+
+    #[test]
+    fn test_extract_skips_rollout_outside_project_root() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join("2026").join("03").join("01");
+        std::fs::create_dir_all(&nested).unwrap();
+        let path = nested.join("rollout-2026-03-01T13-56-17-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(
+            f,
+            r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-03-01T21:56:17Z","cwd":"/tmp/other","model_provider":"openai"}}}}"#
+        )
+        .unwrap();
+        writeln!(
+            f,
+            r#"{{"timestamp":"2026-03-01T21:58:00Z","type":"event_msg","payload":{{"type":"user_message","message":"should be skipped"}}}}"#
+        )
+        .unwrap();
+
+        let output = extract_from_rollout(
+            &path,
+            Utc.with_ymd_and_hms(2026, 3, 1, 21, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap(),
+            Path::new("/tmp/project"),
+        )
+        .unwrap();
+
+        assert!(output.entries.is_empty());
+        assert!(output.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_extract_warns_when_cwd_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join("2026").join("03").join("01");
+        std::fs::create_dir_all(&nested).unwrap();
+        let path = nested.join("rollout-2026-03-01T13-56-17-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(
+            f,
+            r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-03-01T21:56:17Z","model_provider":"openai"}}}}"#
+        )
+        .unwrap();
+        writeln!(
+            f,
+            r#"{{"timestamp":"2026-03-01T21:58:00Z","type":"event_msg","payload":{{"type":"user_message","message":"should be skipped"}}}}"#
+        )
+        .unwrap();
+
+        let output = extract_from_rollout(
+            &path,
+            Utc.with_ymd_and_hms(2026, 3, 1, 21, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap(),
+            Path::new("/tmp/project"),
+        )
+        .unwrap();
+
+        assert!(output.entries.is_empty());
+        assert_eq!(output.warnings.len(), 1);
+        assert!(output.warnings[0].contains("session cwd missing"));
     }
 }
