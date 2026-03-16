@@ -179,12 +179,15 @@ fn extract_from_rollout(
     }
 
     let session_ts_fallback = parse_session_timestamp(session_meta, path);
-    let model = extract_session_model(session_meta);
+    let mut model = extract_session_model(session_meta);
 
     let mut entries = Vec::new();
     let mut i = 1;
 
     while i < lines.len() {
+        if let Some(updated) = extract_model_from_event(&lines[i]) {
+            model = Some(updated);
+        }
         if let Some(prompt) = extract_user_message(&lines[i]) {
             let Some(prompt_ts) = parse_event_timestamp(&lines[i]).or(session_ts_fallback) else {
                 i += 1;
@@ -196,6 +199,7 @@ fn extract_from_rollout(
             }
 
             let (tool_calls, files_touched) = collect_turn_tools(&lines, i + 1);
+            let files_touched = normalize_files_touched(files_touched, project_root);
 
             let mut entry = PromptEntry::new(
                 "unknown".to_string(),
@@ -255,10 +259,34 @@ fn parse_session_timestamp(meta: &Value, path: &Path) -> Option<DateTime<Utc>> {
 }
 
 fn extract_session_model(meta: &Value) -> Option<String> {
-    meta.get("payload")
-        .and_then(|p| p.get("model_provider"))
-        .and_then(|v| v.as_str())
-        .map(String::from)
+    meta.get("payload").and_then(extract_model_from_payload)
+}
+
+fn extract_model_from_event(event: &Value) -> Option<String> {
+    match event.get("type").and_then(|v| v.as_str()) {
+        Some("session_meta") | Some("turn_context") => {
+            event.get("payload").and_then(extract_model_from_payload)
+        }
+        _ => None,
+    }
+}
+
+fn extract_model_from_payload(payload: &Value) -> Option<String> {
+    for key in [
+        "model",
+        "model_name",
+        "model_slug",
+        "model_id",
+        "model_provider",
+    ] {
+        if let Some(value) = payload.get(key).and_then(|v| v.as_str()) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn extract_session_cwd(meta: &Value) -> Option<PathBuf> {
@@ -329,6 +357,9 @@ fn extract_assistant_text(event: &Value) -> Option<String> {
 }
 
 fn extract_response_item_text(payload: &Value) -> Option<String> {
+    if has_non_assistant_role(payload) {
+        return None;
+    }
     let item_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match item_type {
         "message" | "assistant_message" | "output_text" => extract_text_value(
@@ -342,6 +373,9 @@ fn extract_response_item_text(payload: &Value) -> Option<String> {
 }
 
 fn extract_event_msg_text(payload: &Value) -> Option<String> {
+    if has_non_assistant_role(payload) {
+        return None;
+    }
     let event_type = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match event_type {
         "assistant_message" | "assistant_response" | "output_text" => extract_text_value(
@@ -352,6 +386,16 @@ fn extract_event_msg_text(payload: &Value) -> Option<String> {
         ),
         _ => None,
     }
+}
+
+fn has_non_assistant_role(payload: &Value) -> bool {
+    let role = payload.get("role").and_then(|v| v.as_str()).or_else(|| {
+        payload
+            .get("message")
+            .and_then(|m| m.get("role"))
+            .and_then(|v| v.as_str())
+    });
+    matches!(role, Some(r) if r != "assistant")
 }
 
 fn extract_text_value(value: &Value) -> Option<String> {
@@ -625,18 +669,48 @@ fn extract_paths_from_apply_patch(input: &str, files_touched: &mut Vec<String>) 
 }
 
 fn extract_paths_from_command(cmd: &str, files_touched: &mut Vec<String>) {
-    for raw in cmd.split_whitespace() {
-        let token = raw.trim_matches(|c: char| {
-            matches!(
-                c,
-                '"' | '\'' | '`' | ',' | ';' | '(' | ')' | '[' | ']' | '{' | '}'
-            )
-        });
-        if token.is_empty() {
+    let mut heredoc_end: Option<String> = None;
+
+    for line in cmd.lines() {
+        if let Some(end) = &heredoc_end {
+            if line.trim() == end {
+                heredoc_end = None;
+            }
             continue;
         }
-        if is_path_like_token(token) {
-            push_path(files_touched, token);
+
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        let mut i = 0;
+        while i < tokens.len() {
+            let raw = tokens[i];
+            if raw == "<<" || raw == "<<-" {
+                if let Some(next) = tokens.get(i + 1) {
+                    heredoc_end = normalize_heredoc_delimiter(next);
+                    i += 2;
+                    continue;
+                }
+            }
+
+            if let Some(delim) = normalize_heredoc_delimiter(raw) {
+                heredoc_end = Some(delim);
+                i += 1;
+                continue;
+            }
+
+            let token = raw.trim_matches(|c: char| {
+                matches!(
+                    c,
+                    '"' | '\'' | '`' | ',' | ';' | '(' | ')' | '[' | ']' | '{' | '}'
+                )
+            });
+            if token.is_empty() {
+                i += 1;
+                continue;
+            }
+            if is_path_like_token(token) {
+                push_path(files_touched, token);
+            }
+            i += 1;
         }
     }
 }
@@ -653,6 +727,17 @@ fn push_path(files_touched: &mut Vec<String>, candidate: &str) {
 }
 
 fn is_path_like_token(token: &str) -> bool {
+    if token == "/" {
+        return false;
+    }
+    if token.contains('<')
+        || token.contains('>')
+        || token.contains("://")
+        || token.contains('$')
+        || token.contains('=')
+    {
+        return false;
+    }
     if token.starts_with('-') {
         return false;
     }
@@ -679,6 +764,39 @@ fn is_path_like_token(token: &str) -> bool {
     }
 
     false
+}
+
+fn normalize_heredoc_delimiter(token: &str) -> Option<String> {
+    let mut t = token;
+    if let Some(stripped) = t.strip_prefix("<<-") {
+        t = stripped;
+    } else if let Some(stripped) = t.strip_prefix("<<") {
+        t = stripped;
+    } else {
+        return None;
+    }
+
+    let t = t.trim_matches(|c| c == '\'' || c == '"');
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+fn normalize_files_touched(files: Vec<String>, project_root: &Path) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for file in files {
+        let candidate = Path::new(&file);
+        if candidate.is_absolute() {
+            if let Ok(rel) = candidate.strip_prefix(project_root) {
+                push_unique(&mut normalized, &rel.to_string_lossy());
+                continue;
+            }
+        }
+        push_unique(&mut normalized, &file);
+    }
+    normalized
 }
 
 fn normalize_tool_name(name: &str) -> String {
@@ -858,6 +976,46 @@ mod tests {
     }
 
     #[test]
+    fn test_normalizes_absolute_paths_under_project_root() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir
+            .path()
+            .join("rollout-2026-03-01T13-56-17-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-03-01T21:56:17Z","cwd":"/proj","originator":"Codex Desktop","source":"vscode","model_provider":"openai"}}}}"#).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"event_msg","payload":{{"type":"user_message","message":"touch file"}}}}"#
+        )
+        .unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"mcp_tool_call_begin","name":"edit","arguments":{{"path":"/proj/src/lib.rs"}}}}}}"#).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"event_msg","payload":{{"type":"user_message","message":"second"}}}}"#
+        )
+        .unwrap();
+
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 20, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
+        let entries = output.entries;
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].files_touched, vec!["src/lib.rs"]);
+    }
+
+    #[test]
+    fn test_ignores_heredoc_body_tokens_in_commands() {
+        let mut files = Vec::new();
+        let cmd = "cat <<'EOF' > src/output.md\n## Prompt History\nfeature/codex-parity\nEOF\n";
+
+        extract_paths_from_command(cmd, &mut files);
+
+        assert_eq!(files, vec!["src/output.md"]);
+    }
+
+    #[test]
     fn test_uses_user_message_timestamp_for_filtering() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir
@@ -907,6 +1065,59 @@ mod tests {
             output.entries[1].assistant_context.as_deref(),
             Some("assistant reply")
         );
+    }
+
+    #[test]
+    fn test_extract_prefers_turn_context_model() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir
+            .path()
+            .join("rollout-2026-01-15T10-00-00-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-01-15T10:00:00Z","cwd":"/proj","model_provider":"openai"}}}}"#).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"turn_context","payload":{{"model":"gpt-5.2-codex"}}}}"#
+        )
+        .unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"first prompt"}}}}"#
+        )
+        .unwrap();
+
+        let since = Utc.with_ymd_and_hms(2026, 1, 15, 9, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 1, 15, 11, 0, 0).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
+
+        assert_eq!(output.entries.len(), 1);
+        assert_eq!(output.entries[0].model.as_deref(), Some("gpt-5.2-codex"));
+    }
+
+    #[test]
+    fn test_extract_ignores_non_assistant_role_for_context() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir
+            .path()
+            .join("rollout-2026-01-15T10-00-00-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        writeln!(f, r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-01-15T10:00:00Z","cwd":"/proj","originator":"cli","source":"cli"}}}}"#).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"first prompt"}}}}"#
+        )
+        .unwrap();
+        writeln!(f, r#"{{"type":"response_item","payload":{{"type":"message","message":{{"role":"user","content":"user echo"}}}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"event_msg","payload":{{"type":"user_message","content":"second prompt"}}}}"#).unwrap();
+
+        let since = Utc.with_ymd_and_hms(2026, 1, 15, 9, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 1, 15, 11, 0, 0).unwrap();
+        let output = extract_from_rollout(&path, since, until, Path::new("/proj")).unwrap();
+
+        assert_eq!(output.entries.len(), 2);
+        assert!(output.entries[1].assistant_context.is_none());
     }
 
     #[test]
