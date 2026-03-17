@@ -1339,6 +1339,79 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_skips_rollout_when_cwd_resolves_outside_root() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let project_root = dir.path().join("proj");
+        let other = dir.path().join("other");
+        std::fs::create_dir_all(&project_root).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+
+        let nested = dir.path().join("2026").join("03").join("02");
+        std::fs::create_dir_all(&nested).unwrap();
+        let path = nested.join("rollout-2026-03-02T13-56-17-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        let cwd = format!("{}/../other", project_root.display());
+        writeln!(
+            f,
+            r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-03-02T21:56:17Z","cwd":"{cwd}","model_provider":"openai"}}}}"#
+        )
+        .unwrap();
+        writeln!(
+            f,
+            r#"{{"timestamp":"2026-03-02T21:58:00Z","type":"event_msg","payload":{{"type":"user_message","message":"should be skipped"}}}}"#
+        )
+        .unwrap();
+
+        let output = extract_from_rollout(
+            &path,
+            Utc.with_ymd_and_hms(2026, 3, 2, 21, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2026, 3, 2, 23, 0, 0).unwrap(),
+            &project_root,
+        )
+        .unwrap();
+
+        assert!(output.entries.is_empty());
+        assert!(output.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_extract_accepts_rollout_with_cwd_inside_root() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let project_root = dir.path().join("proj");
+        let nested_dir = project_root.join("nested");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+
+        let nested = dir.path().join("2026").join("03").join("03");
+        std::fs::create_dir_all(&nested).unwrap();
+        let path = nested.join("rollout-2026-03-03T13-56-17-testuuid.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+
+        let cwd = format!("{}/nested/..", project_root.display());
+        writeln!(
+            f,
+            r#"{{"type":"session_meta","payload":{{"id":"s1","timestamp":"2026-03-03T21:56:17Z","cwd":"{cwd}","model_provider":"openai"}}}}"#
+        )
+        .unwrap();
+        writeln!(
+            f,
+            r#"{{"timestamp":"2026-03-03T21:58:00Z","type":"event_msg","payload":{{"type":"user_message","message":"should be captured"}}}}"#
+        )
+        .unwrap();
+
+        let output = extract_from_rollout(
+            &path,
+            Utc.with_ymd_and_hms(2026, 3, 3, 21, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2026, 3, 3, 23, 0, 0).unwrap(),
+            &project_root,
+        )
+        .unwrap();
+
+        assert_eq!(output.entries.len(), 1);
+        assert_eq!(output.entries[0].prompt, "should be captured");
+    }
+
+    #[test]
     fn test_extract_warns_when_cwd_missing() {
         let dir = tempfile::TempDir::new().unwrap();
         let nested = dir.path().join("2026").join("03").join("01");

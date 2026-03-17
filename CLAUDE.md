@@ -7,7 +7,7 @@ PromptEx (`pmtx`) is a **Rust CLI tool** that extracts and curates AI prompts fo
 
 ## Architecture
 This is a Rust CLI that:
-1. **Extracts** prompts directly from AI tool session logs (Claude Code, plus WIP Codex support) — no manual recording
+1. **Extracts** prompts directly from AI tool session logs (Claude Code and Codex) — no manual recording
 2. **Analyzes** git state to determine extraction scope (branch, commits, files)
 3. **Correlates** log entries to files/commits in scope
 4. **Curates** prompts (artifact filter, Jaccard deduplication)
@@ -69,7 +69,7 @@ All phases complete. CI enforces fmt, clippy (`-D warnings`), and tests on every
 1. **JSON output only** - `pmtx extract` always emits structured JSON; the agent renders markdown
 2. **Home directory storage** - `~/.promptex/projects/<id>/` to avoid project pollution
 3. **Git-aware scoping** - Feature branches, fork workflows, commit-based and time-based extraction
-4. **Direct log extractors** - Reads Claude Code logs directly and includes WIP Codex extraction; no manual recording
+4. **Direct log extractors** - Reads Claude Code and Codex logs directly; no manual recording
 5. **Privacy-first** - Redacts secrets, tokens, and emails from all output
 6. **Commit-based correlation** - Prompts correlate to file changes, not just branches
 7. **Local-only** - No API calls, no cloud sync, Rust performance
