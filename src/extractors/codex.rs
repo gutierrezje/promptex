@@ -396,6 +396,9 @@ fn extract_event_msg_text(payload: &Value) -> Option<String> {
 }
 
 fn has_non_assistant_role(payload: &Value) -> bool {
+    // Codex assistant responses commonly omit the "role" field entirely.
+    // Treat missing role as assistant (return false) so those messages are
+    // not filtered out when extracting assistant context.
     let role = payload.get("role").and_then(|v| v.as_str()).or_else(|| {
         payload
             .get("message")
@@ -826,9 +829,24 @@ fn normalize_files_touched(files: Vec<String>, project_root: &Path) -> Vec<Strin
             continue;
         }
         let joined = project_root.join(trimmed);
-        let joined = canonicalize_dir(&joined);
-        if let Ok(rel) = joined.strip_prefix(&project_root) {
-            push_unique(&mut normalized, &rel.to_string_lossy());
+        if let Ok(canonical_joined) = joined.canonicalize() {
+            // Both paths resolve on disk — use canonical comparison
+            let canonical_root = canonicalize_dir(&project_root);
+            if let Ok(rel) = canonical_joined.strip_prefix(&canonical_root) {
+                push_unique(&mut normalized, &rel.to_string_lossy());
+            }
+        } else {
+            // Path doesn't exist on disk — use textual strip_prefix but
+            // reject any result containing ".." components
+            let joined_normalized = canonicalize_dir(&joined);
+            if let Ok(rel) = joined_normalized.strip_prefix(&project_root) {
+                let has_parent_dir = rel
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir));
+                if !has_parent_dir {
+                    push_unique(&mut normalized, &rel.to_string_lossy());
+                }
+            }
         }
     }
     normalized
@@ -1115,6 +1133,17 @@ mod tests {
         ];
         let normalized = normalize_files_touched(files, Path::new("/proj"));
         assert_eq!(normalized, vec!["src/lib.rs", "relative.txt"]);
+    }
+
+    #[test]
+    fn test_normalize_files_touched_drops_parent_dir_paths() {
+        let files = vec![
+            "../outside.txt".to_string(),
+            "src/../../../escape.txt".to_string(),
+            "valid/nested/file.rs".to_string(),
+        ];
+        let normalized = normalize_files_touched(files, Path::new("/proj"));
+        assert_eq!(normalized, vec!["valid/nested/file.rs"]);
     }
 
     #[test]
