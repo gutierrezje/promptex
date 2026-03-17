@@ -24,6 +24,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::curation::redact::redact;
+use crate::curation::sanitize::sanitize_for_markdown;
 use crate::prompt::PromptEntry;
 use claude_code::ClaudeCodeExtractor;
 use codex::CodexExtractor;
@@ -148,10 +149,10 @@ fn redact_entries(entries: Vec<PromptEntry>) -> Vec<PromptEntry> {
         .into_iter()
         .map(|mut e| {
             let (redacted, _) = redact(&e.prompt);
-            e.prompt = redacted;
+            e.prompt = sanitize_for_markdown(&redacted);
             if let Some(ctx) = e.assistant_context.take() {
                 let (redacted_ctx, _) = redact(&ctx);
-                e.assistant_context = Some(redacted_ctx);
+                e.assistant_context = Some(sanitize_for_markdown(&redacted_ctx));
             }
             e
         })
