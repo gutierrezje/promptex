@@ -145,11 +145,7 @@ fn extract_from_rollout(
                 continue;
             }
 
-            let (mut tool_calls, files_touched) = collect_turn_tools(&lines, i + 1);
-            if detect_skill_usage(&files_touched) {
-                push_unique(&mut tool_calls, "Skill");
-            }
-            let files_touched = normalize_files_touched(files_touched, project_root);
+            let (tool_calls, files_touched) = collect_turn_tools(&lines, i + 1);
 
             let entry = PromptEntry::new(
                 "unknown".to_string(),
@@ -311,19 +307,18 @@ fn collect_response_item_tool_event(
             let Some(name) = payload.get("name").and_then(|v| v.as_str()) else {
                 return;
             };
+            push_unique(tool_calls, &normalize_tool_name(name));
+
             let args = parse_embedded_json(payload.get("arguments"));
-            let cmd_arg = args
-                .as_ref()
-                .and_then(|v| v.get("cmd"))
-                .and_then(|v| v.as_str());
-
-            push_tool_call(tool_calls, name, cmd_arg);
-
             if let Some(ref args_value) = args {
                 collect_paths_from_named_fields(args_value, files_touched);
             }
 
-            if let Some(cmd) = cmd_arg {
+            if let Some(cmd) = args
+                .as_ref()
+                .and_then(|v| v.get("cmd"))
+                .and_then(|v| v.as_str())
+            {
                 extract_paths_from_command(cmd, files_touched);
             }
 
@@ -335,7 +330,7 @@ fn collect_response_item_tool_event(
             let Some(name) = payload.get("name").and_then(|v| v.as_str()) else {
                 return;
             };
-            push_tool_call(tool_calls, name, None);
+            push_unique(tool_calls, &normalize_tool_name(name));
 
             if name == "apply_patch" {
                 if let Some(input) = payload.get("input").and_then(|v| v.as_str()) {
@@ -361,18 +356,7 @@ fn collect_event_msg_tool_event(
 
     match event_type {
         "exec_command_begin" => {
-            let cmd = payload.get("command").and_then(|v| match v {
-                Value::String(s) => Some(s.to_string()),
-                Value::Array(parts) => Some(
-                    parts
-                        .iter()
-                        .filter_map(|p| p.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                ),
-                _ => None,
-            });
-            push_command_tool_calls(tool_calls, cmd.as_deref());
+            push_unique(tool_calls, "Bash");
         }
         "mcp_tool_call_begin" => {
             if let Some(name) = payload.get("name").and_then(|v| v.as_str()) {
@@ -387,7 +371,7 @@ fn collect_event_msg_tool_event(
             }
         }
         "apply_patch_approval_request" => {
-            push_unique(tool_calls, "Write");
+            push_unique(tool_calls, "Patch");
         }
         _ => {}
     }
@@ -418,16 +402,13 @@ fn extract_parallel_inner_calls(
             continue;
         };
         let inner_name = recipient_name.rsplit('.').next().unwrap_or(recipient_name);
+        push_unique(tool_calls, &normalize_tool_name(inner_name));
 
         if let Some(params) = tool_use.get("parameters") {
-            let cmd = params.get("cmd").and_then(|v| v.as_str());
-            push_tool_call(tool_calls, inner_name, cmd);
             collect_paths_from_named_fields(params, files_touched);
             if let Some(cmd) = params.get("cmd").and_then(|v| v.as_str()) {
                 extract_paths_from_command(cmd, files_touched);
             }
-        } else {
-            push_tool_call(tool_calls, inner_name, None);
         }
     }
 }
@@ -535,69 +516,13 @@ fn is_path_like_token(token: &str) -> bool {
 
 fn normalize_tool_name(name: &str) -> String {
     match name {
-        "edit" | "write_file" | "create_file" | "apply_patch" => "Write",
+        "edit" | "write_file" | "create_file" => "Edit",
         "read" | "read_file" | "view" | "open" => "Read",
-        "list_directory" | "search_files" | "glob_files" => "Explore",
         "bash" | "shell" | "exec_command" | "write_stdin" => "Bash",
+        "apply_patch" => "Patch",
         other => other,
     }
     .to_string()
-}
-
-fn push_tool_call(tool_calls: &mut Vec<String>, name: &str, cmd: Option<&str>) {
-    if matches!(name, "exec_command" | "write_stdin" | "bash" | "shell") {
-        push_command_tool_calls(tool_calls, cmd);
-        return;
-    }
-    push_unique(tool_calls, &normalize_tool_name(name));
-}
-
-fn push_command_tool_calls(tool_calls: &mut Vec<String>, cmd: Option<&str>) {
-    if let Some(cmd) = cmd {
-        let inferred = infer_command_categories(cmd);
-        if !inferred.is_empty() {
-            for category in inferred {
-                push_unique(tool_calls, &category);
-            }
-            return;
-        }
-    }
-    push_unique(tool_calls, "Bash");
-}
-
-fn infer_command_categories(cmd: &str) -> Vec<String> {
-    let mut categories = Vec::new();
-    let sanitized = cmd.replace("&&", ";").replace("||", ";");
-    for segment in sanitized.split(|c| c == ';' || c == '|' || c == '\n') {
-        let Some(head) = command_head(segment) else {
-            continue;
-        };
-        let head = head.to_ascii_lowercase();
-        let category = match head.as_str() {
-            "cat" | "sed" | "head" | "tail" | "less" | "more" | "bat" | "jq" => Some("Read"),
-            "rg" | "grep" | "ripgrep" | "ls" | "find" | "fd" | "tree" | "pwd" => Some("Explore"),
-            "touch" | "tee" | "printf" | "echo" | "cp" | "mv" | "rm" | "mkdir" => Some("Write"),
-            _ => None,
-        };
-        if let Some(cat) = category {
-            push_unique(&mut categories, cat);
-        }
-    }
-    categories
-}
-
-fn command_head(segment: &str) -> Option<&str> {
-    let mut iter = segment.split_whitespace();
-    while let Some(word) = iter.next() {
-        if word == "sudo" || word == "env" {
-            continue;
-        }
-        if word.contains('=') && !word.contains('/') {
-            continue;
-        }
-        return Some(word);
-    }
-    None
 }
 
 fn push_unique(vec: &mut Vec<String>, item: &str) {
@@ -605,15 +530,6 @@ fn push_unique(vec: &mut Vec<String>, item: &str) {
     if !vec.contains(&s) {
         vec.push(s);
     }
-}
-
-fn detect_skill_usage(paths: &[String]) -> bool {
-    paths.iter().any(|path| {
-        path.starts_with("skills/")
-            || path.contains("/skills/")
-            || path.contains("/.agents/skills/")
-            || path.contains("/.codex/skills/")
-    })
 }
 
 fn with_timestamp(mut entry: PromptEntry, ts: DateTime<Utc>) -> PromptEntry {
@@ -702,11 +618,11 @@ mod tests {
 
     #[test]
     fn test_normalize_tool_name() {
-        assert_eq!(normalize_tool_name("edit"), "Write");
+        assert_eq!(normalize_tool_name("edit"), "Edit");
         assert_eq!(normalize_tool_name("read_file"), "Read");
         assert_eq!(normalize_tool_name("bash"), "Bash");
         assert_eq!(normalize_tool_name("exec_command"), "Bash");
-        assert_eq!(normalize_tool_name("apply_patch"), "Write");
+        assert_eq!(normalize_tool_name("apply_patch"), "Patch");
         assert_eq!(normalize_tool_name("my_custom_tool"), "my_custom_tool");
     }
 
@@ -740,7 +656,7 @@ mod tests {
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].prompt, "add auth validation");
-        assert_eq!(entries[0].tool_calls, vec!["Write"]);
+        assert_eq!(entries[0].tool_calls, vec!["Edit"]);
         assert_eq!(entries[0].files_touched, vec!["src/auth.rs"]);
         assert_eq!(entries[0].tool, "codex");
         assert_eq!(entries[0].model, Some("openai/codex-mini".to_string()));
@@ -769,7 +685,7 @@ mod tests {
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].prompt, "add a one-line comment");
-        assert_eq!(entries[0].tool_calls, vec!["Read", "Write"]);
+        assert_eq!(entries[0].tool_calls, vec!["Bash", "Patch"]);
         assert_eq!(entries[0].files_touched, vec!["Cargo.toml"]);
         assert_eq!(entries[1].prompt, "second prompt");
     }
