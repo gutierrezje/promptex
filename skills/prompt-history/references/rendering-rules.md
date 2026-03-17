@@ -45,6 +45,7 @@
 - Never include plaintext credentials. Redact credential-like values as `[REDACTED]`.
 - If uncertain whether a value is sensitive, redact it.
 - If `assistant_context` is present and its last sentence contains a `?`, add `→ Re:` after the blockquote (last sentence, max 120 chars). Omit for declarative context. Before extracting the last sentence, strip separator-only lines (e.g. `` `─────────────────────────────────────────────────` ``).
+- When rendering `→ Re:` sanitize the extracted sentence: collapse whitespace, strip Markdown markers (backticks, `**`, `_`, list prefixes, blockquote markers), and drop the `→ Re:` line if it still contains fences, list-like prefixes, or is mostly punctuation.
 - If the prompt contains Markdown that could break formatting (fences, headings, blockquotes, lists) or JSON blobs, render the prompt as a fenced code block instead of a blockquote. Use a fence length longer than any backtick run in the prompt (e.g., ````text ... ````) and label the fence `text`.
 - If `tool_calls` is non-empty, add `→ Tools:` with the tool names in the order they appear in the entry, de-duplicated.
 - Omit files line if `files_touched` is empty

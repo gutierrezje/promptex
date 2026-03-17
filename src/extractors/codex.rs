@@ -159,7 +159,8 @@ fn extract_from_rollout(
                 });
             }
             let cwd = canonicalize_dir(&cwd);
-            if !cwd.starts_with(project_root) {
+            let project_root = canonicalize_dir(project_root);
+            if cwd.strip_prefix(&project_root).is_err() {
                 return Ok(RolloutExtractOutput {
                     entries: Vec::new(),
                     warnings,
@@ -703,7 +704,7 @@ fn extract_paths_from_command(cmd: &str, files_touched: &mut Vec<String>) {
             let raw = tokens[i];
             if raw == "<<" || raw == "<<-" {
                 if let Some(next) = tokens.get(i + 1) {
-                    heredoc_end = normalize_heredoc_delimiter(next);
+                    heredoc_end = normalize_heredoc_delimiter(&format!("{raw}{next}"));
                     i += 2;
                     continue;
                 }
@@ -803,6 +804,7 @@ fn normalize_heredoc_delimiter(token: &str) -> Option<String> {
 }
 
 fn normalize_files_touched(files: Vec<String>, project_root: &Path) -> Vec<String> {
+    let project_root = canonicalize_dir(project_root);
     let mut normalized = Vec::new();
     for file in files {
         let trimmed = file.trim();
@@ -811,7 +813,8 @@ fn normalize_files_touched(files: Vec<String>, project_root: &Path) -> Vec<Strin
         }
         let candidate = Path::new(trimmed);
         if candidate.is_absolute() {
-            if let Ok(rel) = candidate.strip_prefix(project_root) {
+            let candidate = canonicalize_dir(candidate);
+            if let Ok(rel) = candidate.strip_prefix(&project_root) {
                 push_unique(&mut normalized, &rel.to_string_lossy());
             }
             continue;
