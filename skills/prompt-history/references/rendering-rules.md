@@ -12,7 +12,7 @@
 - Tools: Tool A (model) - N prompts, Tool B - M prompts
 - Models: `model-a`, `model-b`
 - Branch: `feature/example`
-- Time range: YYYY-MM-DD HH:MM - YYYY-MM-DD HH:MM
+- Time range: YYYY-MM-DD HH:MM - YYYY-MM-DD HH:MM (UTC)
 - Commits: `abc1234`, `def5678` (N commits)
 - Modified files: `path/a`, `path/b`
 
