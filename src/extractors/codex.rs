@@ -825,7 +825,11 @@ fn normalize_files_touched(files: Vec<String>, project_root: &Path) -> Vec<Strin
             }
             continue;
         }
-        push_unique(&mut normalized, trimmed);
+        let joined = project_root.join(trimmed);
+        let joined = canonicalize_dir(&joined);
+        if let Ok(rel) = joined.strip_prefix(&project_root) {
+            push_unique(&mut normalized, &rel.to_string_lossy());
+        }
     }
     normalized
 }
