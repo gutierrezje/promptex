@@ -479,7 +479,7 @@ fn extract_command_from_tool_input(input: &Value) -> Option<String> {
 fn infer_command_categories(cmd: &str) -> Vec<String> {
     let mut categories = Vec::new();
     let sanitized = cmd.replace("&&", ";").replace("||", ";");
-    for segment in sanitized.split(|c| c == ';' || c == '|' || c == '\n') {
+    for segment in sanitized.split([';', '|', '\n']) {
         let Some(head) = command_head(segment) else {
             continue;
         };
@@ -498,8 +498,8 @@ fn infer_command_categories(cmd: &str) -> Vec<String> {
 }
 
 fn command_head(segment: &str) -> Option<&str> {
-    let mut iter = segment.split_whitespace();
-    while let Some(word) = iter.next() {
+    let iter = segment.split_whitespace();
+    for word in iter {
         if word == "sudo" || word == "env" {
             continue;
         }
