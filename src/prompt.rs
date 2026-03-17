@@ -21,7 +21,7 @@ pub struct PromptEntry {
     /// Files touched by this prompt's tool calls
     pub files_touched: Vec<String>,
 
-    /// Tool calls made (e.g., ["Edit", "Bash", "Read"])
+    /// Tool calls made (e.g., ["Write", "Read", "Explore"])
     pub tool_calls: Vec<String>,
 
     /// Which AI tool was used (e.g., "claude-code", "codex")
@@ -75,7 +75,7 @@ mod tests {
             "abc123".to_string(),
             "implement JWT validation".to_string(),
             vec!["src/auth.rs".to_string()],
-            vec!["Edit".to_string()],
+            vec!["Write".to_string()],
             "claude-code".to_string(),
             Some("claude-sonnet-4-6".to_string()),
         );
