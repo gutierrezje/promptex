@@ -189,8 +189,10 @@ fn extract_from_rollout(
     let mut i = 1;
 
     while i < lines.len() {
-        if let Some(updated) = extract_model_from_event(&lines[i]) {
-            model = Some(updated);
+        if let Some((updated, is_specific)) = extract_model_from_event(&lines[i]) {
+            if is_specific || model.is_none() {
+                model = Some(updated);
+            }
         }
         if let Some(prompt) = extract_user_message(&lines[i]) {
             let Some(prompt_ts) = parse_event_timestamp(&lines[i]).or(session_ts_fallback) else {
@@ -266,10 +268,14 @@ fn parse_session_timestamp(meta: &Value, path: &Path) -> Option<DateTime<Utc>> {
 }
 
 fn extract_session_model(meta: &Value) -> Option<String> {
-    meta.get("payload").and_then(extract_model_from_payload)
+    meta.get("payload")
+        .and_then(extract_model_from_payload)
+        .map(|(value, _)| value)
 }
 
-fn extract_model_from_event(event: &Value) -> Option<String> {
+/// Returns (model_string, is_specific) where is_specific is false when
+/// only model_provider matched (i.e., no concrete model identifier).
+fn extract_model_from_event(event: &Value) -> Option<(String, bool)> {
     match event.get("type").and_then(|v| v.as_str()) {
         Some("session_meta") | Some("turn_context") => {
             event.get("payload").and_then(extract_model_from_payload)
@@ -278,19 +284,22 @@ fn extract_model_from_event(event: &Value) -> Option<String> {
     }
 }
 
-fn extract_model_from_payload(payload: &Value) -> Option<String> {
-    for key in [
-        "model",
-        "model_name",
-        "model_slug",
-        "model_id",
-        "model_provider",
-    ] {
+/// Returns (value, is_specific). `is_specific` is true when the value came
+/// from a model-identity key (model, model_name, model_slug, model_id)
+/// rather than the fallback model_provider key.
+fn extract_model_from_payload(payload: &Value) -> Option<(String, bool)> {
+    for key in ["model", "model_name", "model_slug", "model_id"] {
         if let Some(value) = payload.get(key).and_then(|v| v.as_str()) {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
+                return Some((trimmed.to_string(), true));
             }
+        }
+    }
+    if let Some(value) = payload.get("model_provider").and_then(|v| v.as_str()) {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some((trimmed.to_string(), false));
         }
     }
     None
@@ -824,7 +833,12 @@ fn normalize_files_touched(files: Vec<String>, project_root: &Path) -> Vec<Strin
         if candidate.is_absolute() {
             let candidate = canonicalize_dir(candidate);
             if let Ok(rel) = candidate.strip_prefix(&project_root) {
-                push_unique(&mut normalized, &rel.to_string_lossy());
+                let has_parent_dir = rel
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir));
+                if !has_parent_dir {
+                    push_unique(&mut normalized, &rel.to_string_lossy());
+                }
             }
             continue;
         }
