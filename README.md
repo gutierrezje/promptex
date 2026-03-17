@@ -19,7 +19,7 @@ cargo install --path .
 # Work with your AI agent normally (pmtx reads logs automatically)
 cd ~/myproject
 git checkout -b feature/auth-fix
-# ... work with Claude Code (Codex support is currently WIP) ...
+# ... work with Claude Code or Codex ...
 
 # At the end of your session, ask your agent:
 # "add my prompts to the PR"
@@ -70,7 +70,7 @@ pmtx projects remove <N|id>  # Remove a project by number or full ID
 | Tool | Status |
 |------|--------|
 | Claude Code | ✅ Supported |
-| Codex CLI / Desktop | 🚧 WIP |
+| Codex CLI / Desktop | ✅ Supported |
 | OpenCode | ⏳ Planned |
 | Cursor | ⏳ Planned |
 | GitHub Copilot | ⏳ Planned |

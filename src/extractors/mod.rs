@@ -8,7 +8,7 @@
 //! | Tool           | Status  | Notes                                           |
 //! |----------------|---------|------------------------------------------------ |
 //! | Claude Code    | ✅ Active | JSONL sessions at `~/.claude/projects/`        |
-//! | Codex CLI/App  | 🚧 WIP    | JSONL sessions at `~/.codex/sessions/`         |
+//! | Codex CLI/App  | ✅ Active | JSONL sessions at `~/.codex/sessions/`         |
 //! | OpenCode       | ⏳ TODO  | Migrated to SQLite (v1.2+); needs rewrite       |
 //! | Cursor         | ⏳ TODO  | Log format TBD                                  |
 //! | GitHub Copilot | ⏳ TODO  | Log format TBD                                  |
@@ -58,6 +58,7 @@ pub struct ExtractionDiagnostics {
 }
 
 impl ExtractionDiagnostics {
+    /// Return warning counts grouped by extractor kind.
     pub fn warning_count_by_source(&self) -> BTreeMap<ExtractorKind, usize> {
         let mut counts = BTreeMap::new();
         for warning in &self.warnings {
@@ -75,6 +76,7 @@ pub enum ExtractorKind {
 }
 
 impl ExtractorKind {
+    /// Human-readable label for display output.
     pub fn label(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "Claude Code",
@@ -82,10 +84,11 @@ impl ExtractorKind {
         }
     }
 
+    /// Short readiness label for CLI output.
     pub fn readiness(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "supported",
-            Self::Codex => "WIP",
+            Self::Codex => "supported",
         }
     }
 }
@@ -175,7 +178,7 @@ pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
 
     if CodexExtractor::is_available(project_root) {
         if let Some(sessions_dir) = CodexExtractor::default_sessions_dir() {
-            let ex = CodexExtractor::new(sessions_dir);
+            let ex = CodexExtractor::new(sessions_dir, project_root.to_path_buf());
             sources.push((
                 ExtractorKind::Codex,
                 Box::new(move |since, until| ex.extract(since, until)),
