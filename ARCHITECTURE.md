@@ -96,7 +96,7 @@ PromptEntry {
     commit: String,
     prompt: String,           // the user's message text
     files_touched: Vec<String>,
-    tool_calls: Vec<String>,  // e.g. ["Edit", "Bash", "Read"]
+    tool_calls: Vec<String>,  // normalized tool names (e.g. ["Read", "Write", "Explore", "Bash"])
     tool: String,             // "claude-code" | "codex"
     model: Option<String>,    // model name if present in logs
     assistant_context: Option<String>, // tail of preceding assistant turn
@@ -104,6 +104,8 @@ PromptEntry {
 ```
 
 Extraction is bounded by the time window from step 2 — only entries within `[since, until]` are read.
+
+Tool calls are normalized into a shared vocabulary (`Read`, `Write`, `Explore`, `Bash`, `Skill`) so downstream renderers can treat extractors consistently even when the underlying log formats differ.
 
 ### 4. Correlation (`src/analysis/correlation.rs`)
 

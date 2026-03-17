@@ -12,7 +12,7 @@
 - Tools: Tool A (model) - N prompts, Tool B - M prompts
 - Models: `model-a`, `model-b`
 - Branch: `feature/example`
-- Time range: YYYY-MM-DD HH:MM - YYYY-MM-DD HH:MM
+- Time range: YYYY-MM-DD HH:MM - YYYY-MM-DD HH:MM (UTC)
 - Commits: `abc1234`, `def5678` (N commits)
 - Modified files: `path/a`, `path/b`
 
@@ -45,6 +45,7 @@
 - Never include plaintext credentials. Redact credential-like values as `[REDACTED]`.
 - If uncertain whether a value is sensitive, redact it.
 - If `assistant_context` is present and its last sentence contains a `?`, add `→ Re:` after the blockquote (last sentence, max 120 chars). Omit for declarative context. Before extracting the last sentence, strip separator-only lines (e.g. `` `─────────────────────────────────────────────────` ``).
+- If the prompt contains Markdown that could break formatting (fences, headings, blockquotes, lists) or JSON blobs, render the prompt as a fenced code block instead of a blockquote. Use a fence length longer than any backtick run in the prompt (e.g., ````text ... ````) and label the fence `text`.
 - If `tool_calls` is non-empty, add `→ Tools:` with the tool names in the order they appear in the entry, de-duplicated.
 - Omit files line if `files_touched` is empty
 - Omit commit line if `commit` field is empty or not a hex hash ≥ 7 chars
