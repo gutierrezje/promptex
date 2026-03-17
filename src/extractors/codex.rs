@@ -586,6 +586,9 @@ fn collect_event_msg_tool_event(
                 ),
                 _ => None,
             });
+            if let Some(cmd_ref) = cmd.as_deref() {
+                extract_paths_from_command(cmd_ref, files_touched);
+            }
             push_command_tool_calls(tool_calls, cmd.as_deref());
         }
         "mcp_tool_call_begin" => {
