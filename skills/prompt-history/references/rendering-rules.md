@@ -10,6 +10,7 @@
 
 **Session Details**
 - Tools: Tool A (model) - N prompts, Tool B - M prompts
+- Models: `model-a`, `model-b`
 - Branch: `feature/example`
 - Time range: YYYY-MM-DD HH:MM - YYYY-MM-DD HH:MM
 - Commits: `abc1234`, `def5678` (N commits)
@@ -23,6 +24,7 @@
 > prompt text
 
 → Re: *"Question from preceding assistant turn?"*
+→ Tools: `Bash`, `Patch`
 → Files: `path/a`, `path/b`
 → Commit: `abc1234`
 
@@ -43,9 +45,11 @@
 - Never include plaintext credentials. Redact credential-like values as `[REDACTED]`.
 - If uncertain whether a value is sensitive, redact it.
 - If `assistant_context` is present and its last sentence contains a `?`, add `→ Re:` after the blockquote (last sentence, max 120 chars). Omit for declarative context. Before extracting the last sentence, strip separator-only lines (e.g. `` `─────────────────────────────────────────────────` ``).
+- If `tool_calls` is non-empty, add `→ Tools:` with the tool names in the order they appear in the entry, de-duplicated.
 - Omit files line if `files_touched` is empty
 - Omit commit line if `commit` field is empty or not a hex hash ≥ 7 chars
 - Show model in tool line only if `model` field is present: `(Tool · model)`
+- In **Session Details**, include `Models:` with unique model values across entries, sorted. Omit if no entries have a model. Cap at 8 models and append `+N more` if there are more.
 - Show at most 8 files in the Session Details modified files line; append `+N more` if there are more
 - Omit empty category sections entirely
 - Duration format: `< 1m`, `32m`, `1h 46m`, `2h`

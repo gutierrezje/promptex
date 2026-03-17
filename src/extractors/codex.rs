@@ -787,14 +787,18 @@ fn normalize_heredoc_delimiter(token: &str) -> Option<String> {
 fn normalize_files_touched(files: Vec<String>, project_root: &Path) -> Vec<String> {
     let mut normalized = Vec::new();
     for file in files {
-        let candidate = Path::new(&file);
+        let trimmed = file.trim();
+        if trimmed.starts_with("~/") {
+            continue;
+        }
+        let candidate = Path::new(trimmed);
         if candidate.is_absolute() {
             if let Ok(rel) = candidate.strip_prefix(project_root) {
                 push_unique(&mut normalized, &rel.to_string_lossy());
-                continue;
             }
+            continue;
         }
-        push_unique(&mut normalized, &file);
+        push_unique(&mut normalized, trimmed);
     }
     normalized
 }
@@ -1003,6 +1007,18 @@ mod tests {
 
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].files_touched, vec!["src/lib.rs"]);
+    }
+
+    #[test]
+    fn test_normalize_files_touched_drops_external_paths() {
+        let files = vec![
+            "/tmp/other.txt".to_string(),
+            "~/secrets.txt".to_string(),
+            "/proj/src/lib.rs".to_string(),
+            "relative.txt".to_string(),
+        ];
+        let normalized = normalize_files_touched(files, Path::new("/proj"));
+        assert_eq!(normalized, vec!["src/lib.rs", "relative.txt"]);
     }
 
     #[test]
