@@ -235,8 +235,11 @@ fn extract_from_session(
                             .clone()
                             .unwrap_or_else(|| "unknown".to_string());
 
-                        let (tool_calls, files_touched) =
+                        let (mut tool_calls, files_touched) =
                             collect_assistant_context(&raw_messages, i + 1);
+                        if detect_skill_usage(&files_touched) {
+                            push_unique(&mut tool_calls, "Skill");
+                        }
                         let files_touched: Vec<String> = files_touched
                             .into_iter()
                             .map(|f| relativize(&f, project_root))
@@ -400,9 +403,22 @@ fn collect_assistant_context(messages: &[RawMessage], start: usize) -> (Vec<Stri
 
                 if part_type == "tool_use" {
                     if let Some(name) = part.get("name").and_then(|v| v.as_str()) {
-                        let tool_name = normalize_tool_name(name);
-                        if !tool_calls.contains(&tool_name) {
-                            tool_calls.push(tool_name);
+                        if name == "bash" {
+                            let cmd = part.get("input").and_then(extract_command_from_tool_input);
+                            let inferred = cmd
+                                .as_deref()
+                                .map(infer_command_categories)
+                                .unwrap_or_default();
+                            if inferred.is_empty() {
+                                push_unique(&mut tool_calls, "Bash");
+                            } else {
+                                for category in inferred {
+                                    push_unique(&mut tool_calls, &category);
+                                }
+                            }
+                        } else {
+                            let tool_name = normalize_tool_name(name);
+                            push_unique(&mut tool_calls, &tool_name);
                         }
 
                         if let Some(file) = extract_file_from_tool(name, part.get("input")) {
@@ -421,15 +437,78 @@ fn collect_assistant_context(messages: &[RawMessage], start: usize) -> (Vec<Stri
 
 fn normalize_tool_name(raw: &str) -> String {
     match raw {
-        "str_replace_based_edit_tool" | "write_file" => "Edit",
+        "str_replace_based_edit_tool" | "write_file" => "Write",
         "bash" => "Bash",
         "read_file" => "Read",
-        "list_directory" => "LS",
-        "search_files" => "Grep",
-        "glob_files" => "Glob",
+        "list_directory" | "search_files" | "glob_files" => "Explore",
         _ => raw,
     }
     .to_string()
+}
+
+fn push_unique(vec: &mut Vec<String>, item: &str) {
+    let s = item.to_string();
+    if !vec.contains(&s) {
+        vec.push(s);
+    }
+}
+
+fn detect_skill_usage(paths: &[String]) -> bool {
+    paths.iter().any(|path| {
+        path.starts_with("skills/")
+            || path.contains("/skills/")
+            || path.contains("/.agents/skills/")
+            || path.contains("/.codex/skills/")
+    })
+}
+
+fn extract_command_from_tool_input(input: &Value) -> Option<String> {
+    match input.get("command")? {
+        Value::String(s) => Some(s.to_string()),
+        Value::Array(parts) => Some(
+            parts
+                .iter()
+                .filter_map(|p| p.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+        ),
+        _ => None,
+    }
+}
+
+fn infer_command_categories(cmd: &str) -> Vec<String> {
+    let mut categories = Vec::new();
+    let sanitized = cmd.replace("&&", ";").replace("||", ";");
+    for segment in sanitized.split(|c| c == ';' || c == '|' || c == '\n') {
+        let Some(head) = command_head(segment) else {
+            continue;
+        };
+        let head = head.to_ascii_lowercase();
+        let category = match head.as_str() {
+            "cat" | "sed" | "head" | "tail" | "less" | "more" | "bat" | "jq" => Some("Read"),
+            "rg" | "grep" | "ripgrep" | "ls" | "find" | "fd" | "tree" | "pwd" => Some("Explore"),
+            "touch" | "tee" | "printf" | "echo" | "cp" | "mv" | "rm" | "mkdir" => Some("Write"),
+            _ => None,
+        };
+        if let Some(cat) = category {
+            push_unique(&mut categories, cat);
+        }
+    }
+    categories
+}
+
+fn command_head(segment: &str) -> Option<&str> {
+    let mut iter = segment.split_whitespace();
+    while let Some(word) = iter.next() {
+        if word == "sudo" || word == "env" {
+            continue;
+        }
+        if word.contains('=') && !word.contains('/') {
+            continue;
+        }
+        return Some(word);
+    }
+    None
 }
 
 fn extract_file_from_tool(tool_name: &str, input: Option<&Value>) -> Option<String> {
@@ -472,7 +551,7 @@ mod tests {
     #[test]
     fn test_normalize_tool_names() {
         assert_eq!(normalize_tool_name("bash"), "Bash");
-        assert_eq!(normalize_tool_name("str_replace_based_edit_tool"), "Edit");
+        assert_eq!(normalize_tool_name("str_replace_based_edit_tool"), "Write");
         assert_eq!(normalize_tool_name("read_file"), "Read");
     }
 
@@ -600,7 +679,7 @@ mod tests {
         let (tool_calls, files_touched) = collect_assistant_context(&messages, 0);
 
         assert!(tool_calls.contains(&"Bash".to_string()), "missing Bash");
-        assert!(tool_calls.contains(&"Edit".to_string()), "missing Edit");
+        assert!(tool_calls.contains(&"Write".to_string()), "missing Write");
         assert!(tool_calls.contains(&"Read".to_string()), "missing Read");
         assert!(
             files_touched.contains(&"src/foo.rs".to_string()),
@@ -634,7 +713,7 @@ mod tests {
             "new_string": "y"
         });
         assert_eq!(
-            extract_file_from_tool("Edit", Some(&edit_input)),
+            extract_file_from_tool("Write", Some(&edit_input)),
             Some("src/auth.rs".to_string())
         );
 

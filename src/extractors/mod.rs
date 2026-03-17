@@ -196,7 +196,7 @@ mod tests {
             "abc123".to_string(),
             prompt.to_string(),
             vec!["src/lib.rs".to_string()],
-            vec!["Edit".to_string()],
+            vec!["Write".to_string()],
             "claude-code".to_string(),
             None,
         );
