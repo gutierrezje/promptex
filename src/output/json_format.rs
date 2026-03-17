@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use crate::analysis::correlation::GitContext;
 use crate::analysis::scope::ExtractionScope;
+use crate::extractors::{ExtractionDiagnostics, ExtractionWarning};
 use crate::prompt::PromptEntry;
 
 /// Top-level JSON envelope emitted by `pmtx extract`.
@@ -17,6 +18,7 @@ struct JsonOutput<'a> {
     commits: Vec<CommitSummary>,
     scope_files: &'a [String],
     entries: &'a [PromptEntry],
+    warnings: &'a [ExtractionWarning],
 }
 
 #[derive(Serialize)]
@@ -30,6 +32,7 @@ pub fn render_json(
     entries: &[PromptEntry],
     ctx: &GitContext,
     scope: &ExtractionScope,
+    diagnostics: &ExtractionDiagnostics,
 ) -> anyhow::Result<String> {
     let commits = ctx
         .commits
@@ -47,6 +50,7 @@ pub fn render_json(
         commits,
         scope_files: &ctx.scope_files,
         entries,
+        warnings: &diagnostics.warnings,
     };
 
     Ok(serde_json::to_string_pretty(&output)?)
@@ -89,7 +93,13 @@ mod tests {
         };
 
         let entries: Vec<PromptEntry> = Vec::new();
-        let json = render_json(&entries, &ctx, &ExtractionScope::LastNCommits(1)).unwrap();
+        let json = render_json(
+            &entries,
+            &ctx,
+            &ExtractionScope::LastNCommits(1),
+            &crate::extractors::ExtractionDiagnostics::default(),
+        )
+        .unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(value["scope"], "last-n-commits");
@@ -97,5 +107,41 @@ mod tests {
         assert_eq!(value["entries"].as_array().unwrap().len(), 0);
         assert_eq!(value["scope_files"][0], "src/lib.rs");
         assert_eq!(value["commits"][0]["short_hash"], "abc1234");
+    }
+
+    #[test]
+    fn render_json_includes_warnings() {
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 10, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 3, 1, 11, 0, 0).unwrap();
+        let ctx = GitContext {
+            scope_files: vec![],
+            since,
+            until,
+            commits: vec![],
+        };
+
+        let mut diagnostics = crate::extractors::ExtractionDiagnostics::default();
+        diagnostics
+            .warnings
+            .push(crate::extractors::ExtractionWarning {
+                source: crate::extractors::ExtractorKind::ClaudeCode,
+                detail: "bad line".to_string(),
+            });
+
+        let entries: Vec<PromptEntry> = Vec::new();
+        let json = render_json(
+            &entries,
+            &ctx,
+            &ExtractionScope::LastNCommits(1),
+            &diagnostics,
+        )
+        .unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["warnings"].is_array());
+        let warnings = value["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0]["source"], "claude-code");
+        assert_eq!(warnings[0]["detail"], "bad line");
     }
 }

@@ -89,7 +89,7 @@ pub fn execute(
         eprintln!("Try widening the scope with --commits N or --branch-lifetime.");
     }
 
-    let out = json_format::render_json(&entries, &ctx, &scope)?;
+    let out = json_format::render_json(&entries, &ctx, &scope, &diagnostics)?;
     println!("{out}");
 
     Ok(())

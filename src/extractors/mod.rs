@@ -23,6 +23,8 @@ use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::curation::redact::redact;
 use crate::curation::sanitize::sanitize_for_markdown;
 use crate::prompt::PromptEntry;
@@ -45,7 +47,7 @@ pub struct ExtractorOutput {
 }
 
 /// Non-fatal warning captured during extraction.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtractionWarning {
     pub source: ExtractorKind,
     pub detail: String,
@@ -69,7 +71,8 @@ impl ExtractionDiagnostics {
 }
 
 /// Extractor source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ExtractorKind {
     ClaudeCode,
     Codex,
