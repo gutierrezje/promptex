@@ -58,6 +58,7 @@ pub struct ExtractionDiagnostics {
 }
 
 impl ExtractionDiagnostics {
+    /// Return warning counts grouped by extractor kind.
     pub fn warning_count_by_source(&self) -> BTreeMap<ExtractorKind, usize> {
         let mut counts = BTreeMap::new();
         for warning in &self.warnings {
@@ -75,6 +76,7 @@ pub enum ExtractorKind {
 }
 
 impl ExtractorKind {
+    /// Human-readable label for display output.
     pub fn label(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "Claude Code",
@@ -82,6 +84,7 @@ impl ExtractorKind {
         }
     }
 
+    /// Short readiness label for CLI output.
     pub fn readiness(&self) -> &'static str {
         match self {
             Self::ClaudeCode => "supported",

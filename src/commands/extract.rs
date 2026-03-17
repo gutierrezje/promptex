@@ -8,6 +8,7 @@ use crate::extractors::{self, ExtractionDiagnostics};
 use crate::output::json_format;
 use crate::project_id;
 
+/// Run the `pmtx extract` command with resolved scope flags.
 pub fn execute(
     uncommitted: bool,
     commits: Option<usize>,

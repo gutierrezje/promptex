@@ -41,6 +41,7 @@ pub struct PromptEntry {
 }
 
 impl PromptEntry {
+    /// Build a prompt entry with the provided fields and a fresh timestamp.
     pub fn new(
         branch: String,
         commit: String,

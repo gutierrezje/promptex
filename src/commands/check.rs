@@ -10,6 +10,7 @@ use anyhow::Result;
 use crate::extractors;
 use crate::project_id;
 
+/// Run the `pmtx check` command.
 pub fn execute() -> Result<()> {
     let cwd = env::current_dir()?;
     let pid = project_id::get_project_id(&cwd)?;

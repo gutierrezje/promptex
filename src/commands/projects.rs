@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use crate::commands::status::format_relative;
 use crate::ProjectsAction;
 
+/// Run the `pmtx projects` command for the given action.
 pub fn execute(action: ProjectsAction) -> Result<()> {
     match action {
         ProjectsAction::List => list(),

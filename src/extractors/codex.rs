@@ -17,12 +17,14 @@ use super::traits::PromptExtractor;
 use super::ExtractorOutput;
 use crate::prompt::PromptEntry;
 
+/// Extracts Codex CLI/Desktop rollout logs for a single project.
 pub struct CodexExtractor {
     sessions_dir: PathBuf,
     project_root: PathBuf,
 }
 
 impl CodexExtractor {
+    /// Create a Codex extractor for the given sessions directory and project root.
     pub fn new(sessions_dir: PathBuf, project_root: PathBuf) -> Self {
         Self {
             sessions_dir,
@@ -30,6 +32,7 @@ impl CodexExtractor {
         }
     }
 
+    /// Resolve the default Codex sessions directory, if present.
     pub fn default_sessions_dir() -> Option<PathBuf> {
         let base = if let Ok(home) = std::env::var("CODEX_HOME") {
             PathBuf::from(home)

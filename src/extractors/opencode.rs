@@ -22,15 +22,18 @@ use super::traits::PromptExtractor;
 use super::ExtractorOutput;
 use crate::prompt::PromptEntry;
 
+/// Extracts legacy OpenCode JSON message logs (pre-SQLite).
 pub struct OpenCodeExtractor {
     message_dir: PathBuf,
 }
 
 impl OpenCodeExtractor {
+    /// Create an OpenCode extractor for the provided message directory.
     pub fn new(message_dir: PathBuf) -> Self {
         Self { message_dir }
     }
 
+    /// Resolve the default OpenCode message directory, if it exists.
     pub fn default_message_dir() -> Option<PathBuf> {
         let dir = home_dir()?
             .join(".local")

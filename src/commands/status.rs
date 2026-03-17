@@ -5,6 +5,7 @@ use std::env;
 use crate::analysis::git;
 use crate::project_id;
 
+/// Run the `pmtx status` command.
 pub fn execute() -> Result<()> {
     let cwd = env::current_dir()?;
 

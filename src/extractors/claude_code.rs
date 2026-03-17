@@ -18,6 +18,7 @@ use super::traits::PromptExtractor;
 use super::ExtractorOutput;
 use crate::prompt::PromptEntry;
 
+/// Extracts Claude Code JSONL transcripts for a single project.
 pub struct ClaudeCodeExtractor {
     /// Claude Code log directory for the current project.
     project_log_dir: PathBuf,
@@ -26,6 +27,7 @@ pub struct ClaudeCodeExtractor {
 }
 
 impl ClaudeCodeExtractor {
+    /// Create a Claude Code extractor for the provided log directory and project root.
     pub fn new(project_log_dir: PathBuf, project_root: PathBuf) -> Self {
         Self {
             project_log_dir,
