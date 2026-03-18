@@ -9,6 +9,9 @@ use crate::extractors::{ExtractionDiagnostics, ExtractionWarning};
 use crate::prompt::PromptEntry;
 
 /// Top-level JSON envelope emitted by `pmtx extract`.
+///
+/// This structure represents the authoritative machine contract for extraction
+/// results, including git context and any non-fatal diagnostics.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExtractionReport {
     /// Resolved scope kind.
@@ -18,6 +21,8 @@ pub struct ExtractionReport {
     pub commits: Vec<CommitSummary>,
     pub scope_files: Vec<String>,
     pub entries: Vec<PromptEntry>,
+    /// Complete list of non-fatal extraction diagnostics (parse errors, etc.).
+    /// This list is never truncated; full detail is always available here.
     pub warnings: Vec<ExtractionWarning>,
 }
 
@@ -189,5 +194,38 @@ mod tests {
             deserialized.entries[0].category.as_deref(),
             Some("Investigation")
         );
+    }
+
+    #[test]
+    fn render_json_includes_multiple_warnings_no_truncation() {
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 10, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 3, 1, 11, 0, 0).unwrap();
+        let ctx = GitContext {
+            scope_files: vec![],
+            since,
+            until,
+            commits: vec![],
+        };
+
+        let mut diagnostics = crate::extractors::ExtractionDiagnostics::default();
+        for i in 0..10 {
+            diagnostics
+                .warnings
+                .push(crate::extractors::ExtractionWarning {
+                    source: crate::extractors::ExtractorKind::ClaudeCode,
+                    detail: format!("warning {}", i),
+                });
+        }
+
+        let json = render_json(
+            &vec![],
+            &ctx,
+            &ExtractionScope::LastNCommits(1),
+            &diagnostics,
+        )
+        .unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["warnings"].as_array().unwrap().len(), 10);
     }
 }

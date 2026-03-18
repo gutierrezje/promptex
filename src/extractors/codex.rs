@@ -66,7 +66,7 @@ impl PromptExtractor for CodexExtractor {
                 }
                 Err(err) => {
                     warnings.push(format!(
-                        "{}: failed to extract rollout ({err})",
+                        "failed to extract rollout from {}: {err}",
                         file.display()
                     ));
                 }
@@ -124,7 +124,7 @@ fn extract_from_rollout(
         match serde_json::from_str::<Value>(&line) {
             Ok(v) => lines.push(v),
             Err(err) => warnings.push(format!(
-                "{}:{} invalid JSON line skipped ({err})",
+                "skipped invalid JSON line at {}:{}: {err}",
                 path.display(),
                 idx + 1
             )),
@@ -140,7 +140,7 @@ fn extract_from_rollout(
 
     let Some(session_meta) = find_session_meta(&lines) else {
         warnings.push(format!(
-            "{}: missing session_meta; skipping rollout",
+            "missing session_meta in {}: skipping rollout",
             path.display()
         ));
         return Ok(RolloutExtractOutput {
@@ -153,7 +153,7 @@ fn extract_from_rollout(
         Some(cwd) => {
             if !cwd.is_absolute() {
                 warnings.push(format!(
-                    "{}: session cwd is not absolute; skipping rollout",
+                    "session cwd is not absolute in {}: skipping rollout",
                     path.display()
                 ));
                 return Ok(RolloutExtractOutput {
@@ -172,7 +172,7 @@ fn extract_from_rollout(
         }
         None => {
             warnings.push(format!(
-                "{}: session cwd missing; skipping rollout",
+                "session cwd missing in {}: skipping rollout",
                 path.display()
             ));
             return Ok(RolloutExtractOutput {
@@ -1346,7 +1346,7 @@ mod tests {
         assert_eq!(output.entries.len(), 1);
         assert_eq!(output.entries[0].prompt, "collect diagnostics");
         assert_eq!(output.warnings.len(), 1);
-        assert!(output.warnings[0].contains("invalid JSON line skipped"));
+        assert!(output.warnings[0].contains("skipped invalid JSON line at"));
         assert!(output.warnings[0].contains("rollout-2026-03-01T13-56-17-testuuid.jsonl"));
     }
 
@@ -1483,6 +1483,6 @@ mod tests {
 
         assert!(output.entries.is_empty());
         assert_eq!(output.warnings.len(), 1);
-        assert!(output.warnings[0].contains("session cwd missing"));
+        assert!(output.warnings[0].contains("session cwd missing in"));
     }
 }

@@ -50,13 +50,19 @@ pub struct ExtractorOutput {
 }
 
 /// Non-fatal warning captured during extraction.
+///
+/// Extractors emit raw strings describing parse errors (e.g. malformed lines)
+/// or file-level failures that do not halt the entire process.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtractionWarning {
     pub source: ExtractorKind,
     pub detail: String,
 }
 
-/// Diagnostics across all extractor runs.
+/// Central aggregator for diagnostics across all extractor runs.
+///
+/// This serves as the bridge between raw extractor warnings and the final
+/// output formatting layer.
 #[derive(Debug, Default, Clone)]
 pub struct ExtractionDiagnostics {
     pub warnings: Vec<ExtractionWarning>,

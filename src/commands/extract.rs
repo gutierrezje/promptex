@@ -109,26 +109,116 @@ pub fn execute(
     Ok(())
 }
 
+/// Limit for warning previews shown on stderr to avoid overwhelming the user.
+const MAX_WARNING_PREVIEW: usize = 3;
+
+/// Finalize extractor diagnostics policy:
+/// 1. Extractor parse issues (e.g. malformed JSON lines) are non-fatal.
+/// 2. Full details of every warning are always included in the JSON output.
+/// 3. stderr prints a bounded human-readable summary of these warnings.
 fn print_warning_summary(diagnostics: &ExtractionDiagnostics) {
+    for line in warning_summary_lines(diagnostics) {
+        eprintln!("{line}");
+    }
+}
+
+fn warning_summary_lines(diagnostics: &ExtractionDiagnostics) -> Vec<String> {
     if diagnostics.warnings.is_empty() {
-        return;
+        return Vec::new();
     }
 
-    eprintln!(
-        "  [WARNING] {} non-fatal extraction warning(s)",
-        diagnostics.warnings.len()
-    );
+    let mut lines = vec![
+        format!(
+            "\n  [!] {} non-fatal parse warning(s) occurred during extraction.",
+            diagnostics.warnings.len()
+        ),
+        "      See JSON output warnings for complete details.".to_string(),
+    ];
 
     for (source, count) in diagnostics.warning_count_by_source() {
-        eprintln!("    - {}: {count}", source.label());
+        lines.push(format!("    - {}: {count}", source.label()));
     }
 
-    for warning in diagnostics.warnings.iter().take(3) {
-        eprintln!("    · {}: {}", warning.source.label(), warning.detail);
+    for warning in diagnostics.warnings.iter().take(MAX_WARNING_PREVIEW) {
+        lines.push(format!(
+            "    · {}: {}",
+            warning.source.label(),
+            warning.detail
+        ));
     }
 
-    let remaining = diagnostics.warnings.len().saturating_sub(3);
+    let remaining = diagnostics
+        .warnings
+        .len()
+        .saturating_sub(MAX_WARNING_PREVIEW);
     if remaining > 0 {
-        eprintln!("    · ... and {remaining} more");
+        lines.push(format!("    · ... and {remaining} more"));
+    }
+
+    lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::extractors::{ExtractionDiagnostics, ExtractionWarning, ExtractorKind};
+
+    #[test]
+    fn test_print_warning_summary_empty() {
+        let diagnostics = ExtractionDiagnostics::default();
+        let lines = warning_summary_lines(&diagnostics);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_print_warning_summary_with_overflow() {
+        let mut diagnostics = ExtractionDiagnostics::default();
+        for i in 0..5 {
+            diagnostics.warnings.push(ExtractionWarning {
+                source: ExtractorKind::ClaudeCode,
+                detail: format!("warning {}", i),
+            });
+        }
+
+        let lines = warning_summary_lines(&diagnostics);
+
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("5 non-fatal parse warning(s)")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("See JSON output warnings for complete details.")));
+        assert!(lines.iter().any(|line| line == "    - Claude Code: 5"));
+        assert!(lines.iter().any(|line| line.contains("warning 0")));
+        assert!(lines.iter().any(|line| line.contains("warning 1")));
+        assert!(lines.iter().any(|line| line.contains("warning 2")));
+        assert!(!lines.iter().any(|line| line.contains("warning 3")));
+        assert!(!lines.iter().any(|line| line.contains("warning 4")));
+        assert!(lines.iter().any(|line| line.contains("... and 2 more")));
+    }
+
+    #[test]
+    fn test_print_warning_summary_groups_by_source() {
+        let mut diagnostics = ExtractionDiagnostics::default();
+        diagnostics.warnings.push(ExtractionWarning {
+            source: ExtractorKind::ClaudeCode,
+            detail: "a".to_string(),
+        });
+        diagnostics.warnings.push(ExtractionWarning {
+            source: ExtractorKind::Codex,
+            detail: "b".to_string(),
+        });
+        diagnostics.warnings.push(ExtractionWarning {
+            source: ExtractorKind::Codex,
+            detail: "c".to_string(),
+        });
+
+        let lines = warning_summary_lines(&diagnostics);
+
+        assert!(lines.iter().any(|line| line == "    - Claude Code: 1"));
+        assert!(lines
+            .iter()
+            .any(|line| line == "    - Codex CLI / Desktop: 2"));
+        assert!(!lines.iter().any(|line| line.contains("... and")));
     }
 }

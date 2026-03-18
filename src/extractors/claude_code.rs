@@ -77,7 +77,7 @@ impl PromptExtractor for ClaudeCodeExtractor {
                 }
                 Err(err) => {
                     warnings.push(format!(
-                        "{}: failed to extract session ({err})",
+                        "failed to extract session from {}: {err}",
                         session_file.display()
                     ));
                 }
@@ -227,7 +227,7 @@ fn extract_from_session(
         match serde_json::from_str::<RawMessage>(&line) {
             Ok(msg) => raw_messages.push(msg),
             Err(err) => warnings.push(format!(
-                "{}:{} invalid JSON line skipped ({err})",
+                "skipped invalid JSON line at {}:{}: {err}",
                 path.display(),
                 idx + 1
             )),
@@ -826,7 +826,7 @@ mod tests {
         assert_eq!(output.entries.len(), 1);
         assert_eq!(output.entries[0].prompt, "extract diagnostics");
         assert_eq!(output.warnings.len(), 1);
-        assert!(output.warnings[0].contains("invalid JSON line skipped"));
+        assert!(output.warnings[0].contains("skipped invalid JSON line at"));
         assert!(output.warnings[0].contains("session-1.jsonl"));
     }
 }
