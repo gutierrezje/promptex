@@ -182,17 +182,29 @@ struct MessageBody {
     content: Option<Value>, // string or array
 }
 
-/// Strip `project_root` from an absolute path, returning a repo-relative path.
+/// Normalize a touched file path for correlation with git-scoped files.
 ///
-/// If the path is already relative or doesn't start with `project_root`, it is
-/// returned as-is. This normalizes the absolute paths that Claude Code writes
-/// into tool `file_path` / `path` fields so they can be matched against
-/// repo-relative `scope_files` from git.
-fn relativize(path: &str, project_root: &Path) -> String {
-    Path::new(path)
-        .strip_prefix(project_root)
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| path.to_string())
+/// Rules:
+/// - Absolute paths under `project_root` are rewritten to repo-relative paths.
+/// - Relative paths are kept as-is.
+/// - Absolute paths outside `project_root` are dropped.
+/// - Home-relative (`~/...`) paths are dropped.
+fn normalize_files_touched_path(path: &str, project_root: &Path) -> Option<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "~" || trimmed.starts_with("~/") {
+        return None;
+    }
+
+    let p = Path::new(trimmed);
+    if p.is_absolute() {
+        return p
+            .strip_prefix(project_root)
+            .ok()
+            .map(|rel| rel.to_string_lossy().into_owned())
+            .filter(|rel| !rel.is_empty());
+    }
+
+    Some(trimmed.to_string())
 }
 
 fn extract_from_session(
@@ -242,16 +254,22 @@ fn extract_from_session(
                         if detect_skill_usage(&files_touched) {
                             push_unique(&mut tool_calls, "Skill");
                         }
-                        let files_touched: Vec<String> = files_touched
-                            .into_iter()
-                            .map(|f| relativize(&f, project_root))
-                            .collect();
+                        let mut normalized_files_touched = Vec::new();
+                        for file in files_touched {
+                            if let Some(normalized) =
+                                normalize_files_touched_path(&file, project_root)
+                            {
+                                if !normalized_files_touched.contains(&normalized) {
+                                    normalized_files_touched.push(normalized);
+                                }
+                            }
+                        }
 
                         let mut entry = PromptEntry::new(
                             branch,
                             String::new(),
                             prompt_text.clone(),
-                            files_touched,
+                            normalized_files_touched,
                             tool_calls,
                             "claude-code".to_string(),
                             None,
@@ -558,17 +576,21 @@ mod tests {
     }
 
     #[test]
-    fn test_relativize_strips_project_root() {
+    fn test_normalize_files_touched_path() {
         let root = Path::new("/Users/alice/myproject");
         assert_eq!(
-            relativize("/Users/alice/myproject/src/main.rs", root),
-            "src/main.rs"
+            normalize_files_touched_path("/Users/alice/myproject/src/main.rs", root),
+            Some("src/main.rs".to_string())
         );
-        assert_eq!(relativize("src/main.rs", root), "src/main.rs");
         assert_eq!(
-            relativize("/Users/alice/otherproject/foo.rs", root),
-            "/Users/alice/otherproject/foo.rs"
+            normalize_files_touched_path("src/main.rs", root),
+            Some("src/main.rs".to_string())
         );
+        assert_eq!(
+            normalize_files_touched_path("/Users/alice/otherproject/foo.rs", root),
+            None
+        );
+        assert_eq!(normalize_files_touched_path("~/secrets.txt", root), None);
     }
 
     #[test]
@@ -705,6 +727,56 @@ mod tests {
 
         assert_eq!(tool_calls, vec!["Bash"]);
         assert!(files_touched.is_empty());
+    }
+
+    #[test]
+    fn test_extract_drops_external_absolute_and_home_relative_paths() {
+        let log_dir = tempfile::TempDir::new().unwrap();
+        let project_root = tempfile::TempDir::new().unwrap();
+        let session = log_dir.path().join("session-1.jsonl");
+        let mut f = std::fs::File::create(&session).unwrap();
+
+        let in_repo_abs = project_root.path().join("src").join("main.rs");
+        std::fs::create_dir_all(in_repo_abs.parent().unwrap()).unwrap();
+        std::fs::write(&in_repo_abs, "fn main() {}\n").unwrap();
+
+        let in_repo_abs_str = in_repo_abs.to_string_lossy();
+
+        writeln!(
+            f,
+            r#"{{"type":"user","timestamp":"2026-03-01T23:47:54Z","gitBranch":"main","message":{{"role":"user","content":"path filtering"}}}}"#
+        )
+        .unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"tool_use","name":"read_file","input":{{"path":"{}"}}}},{{"type":"tool_use","name":"read_file","input":{{"path":"/tmp/external.txt"}}}},{{"type":"tool_use","name":"read_file","input":{{"path":"~/dotfile"}}}},{{"type":"tool_use","name":"read_file","input":{{"path":"src/lib.rs"}}}}]}}}}"#,
+            in_repo_abs_str
+        )
+        .unwrap();
+
+        let extractor = ClaudeCodeExtractor::new(
+            log_dir.path().to_path_buf(),
+            project_root.path().to_path_buf(),
+        );
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 23, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2026, 3, 2, 0, 0, 0).unwrap();
+
+        let output = extractor.extract(since, until).unwrap();
+        assert_eq!(output.entries.len(), 1);
+        assert_eq!(output.entries[0].prompt, "path filtering");
+
+        assert!(output.entries[0]
+            .files_touched
+            .contains(&"src/main.rs".to_string()));
+        assert!(output.entries[0]
+            .files_touched
+            .contains(&"src/lib.rs".to_string()));
+        assert!(!output.entries[0]
+            .files_touched
+            .contains(&"/tmp/external.txt".to_string()));
+        assert!(!output.entries[0]
+            .files_touched
+            .contains(&"~/dotfile".to_string()));
     }
 
     #[test]
