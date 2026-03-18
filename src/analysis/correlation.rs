@@ -182,6 +182,7 @@ mod tests {
             tool: "claude-code".to_string(),
             model: None,
             assistant_context: None,
+            category: None,
         }
     }
 

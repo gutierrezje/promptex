@@ -1,6 +1,6 @@
 ---
 name: prompt-history
-description: Extracts and curates AI prompt history into PR-ready markdown using PromptEx (pmtx). Reads AI tool session logs, correlates prompts to git scope, and renders categorized output for pull request descriptions. Use when the user asks about prompt history, wants to document their AI-assisted reasoning for a PR, or asks to extract or summarize their session.
+description: Extracts and curates AI prompt history into PR-ready markdown using PromptEx (pmtx). Use when the user asks about prompt history, wants to document their AI-assisted reasoning for a PR, or asks to extract or summarize their session.
 compatibility: Requires pmtx binary installed. Run `cargo install --path .` from https://github.com/gutierrezje/promptex or see the README for other install options.
 metadata:
   author: gutierrezje
@@ -13,7 +13,7 @@ PromptEx (`pmtx`) reads AI tool session logs, correlates prompts to git changes 
 
 ---
 
-## On session start
+## On start
 
 Run once to verify your tool is supported:
 
@@ -30,15 +30,15 @@ If `pmtx` is not found, see [Troubleshooting](#troubleshooting) below.
 
 ## Extracting
 
-When the user wants PR-ready output, or at the end of a session, run:
+When the user wants PR-ready output, run:
 
 ```bash
 pmtx extract [scope-flags]
 ```
 
 This outputs structured JSON containing the curated entries. You then:
-1. **Categorize** entries into Investigation, Solution, or Testing
-2. **Render** PR markdown using `references/rendering-rules.md`
+1. **Categorize and Filter** entries by modifying the JSON payload in memory. Add `"category": "Investigation"`, `"category": "Solution"`, `"category": "Testing"`, or `"category": "Ignore"` to each entry object.
+2. **Format** the resulting JSON by piping it to `pmtx format > out.md` which will generate the PR markdown formatting for you.
 
 ### Empty-result handling
 
@@ -59,32 +59,39 @@ If the user provided flags, use them. Otherwise infer from context:
 | Feature branch | *(no flag — smart default)* |
 | Mainline + uncommitted changes | `--uncommitted` |
 | Mainline, last commit only | `--commits 1` |
-| "Last hour / 2 hours / today" | `--since 2h` (or `1h`, `1d`, `3w`) |
+| "Last hour / 2 days / 3 weeks" | `--since 1h` (or `2d`, `3w`) |
 | "The whole branch" | `--branch-lifetime` |
 | Unsure | Ask the user |
 
 ### Categorization
 
-Assign each entry to the most fitting section:
+Assign each entry a `"category"` attribute in the JSON payload:
 
-- **Investigation** — exploring or understanding (reading code, design questions, error analysis)
-- **Solution** — implementing or changing behavior (edits, fixes, refactors, config)
-- **Testing** — validating behavior (tests, checks, verification)
+- **`Investigation`** — exploring or understanding (reading code, design questions, error analysis)
+- **`Solution`** — implementing or changing behavior (edits, fixes, refactors, config)
+- **`Testing`** — validating behavior (tests, checks, verification)
+- **`Ignore`** — noise to drop completely from the final output
 
-**`assistant_context`**: always use it when present, especially for short approvals ("yes", "go ahead") and mixed messages. It often disambiguates intent.
+**`assistant_context`**: use it when need to disambiguate intent, especially for short approvals ("yes", "go ahead") and mixed messages. Edit to earliest complete sentence.
 
-**Noise entries to drop:**
+**Noise entries to ignore (mark as `"category": "Ignore"`):**
 - Meta prompts about running pmtx itself (extract/summarize/invoke skill)
 - Entries with no tool calls and no files touched, unless they contain meaningful design reasoning
 - Near-duplicate prompts; keep the most recent version
 - Short replies with no meaningful tool calls and no clear proposal in `assistant_context`
 - Git/workflow housekeeping with no files touched (switch/push/merge/PR admin)
 
-When in doubt, keep the entry. The user can always trim.
+When in doubt, keep the entry (Investigation/Solution/Testing). The user can always trim.
 
-### Rendering
+### Formatting
 
-Follow `references/rendering-rules.md` for the full format spec, example output, and per-field rules.
+Do not attempt to write the markdown formatting string manually. Once you've added standard `"category"` strings to the JSON, write that JSON to a temporary file or pipe it to the formatting engine:
+
+```bash
+cat categorized.json | pmtx format --out ~/.promptex/projects/{id}
+```
+
+The `pmtx format --out` command will automatically generate a file named `PROMPTS-YYYYMMDD-HHMM.md` and print its absolute path to stdout. Capture this output to use in subsequent commands.
 
 ### Security gate before writing or posting
 
@@ -92,16 +99,17 @@ Apply defense-in-depth redaction at the skill layer before writing or posting.
 
 - Mask credential-like strings (tokens, keys, passwords, private keys, auth headers, session values).
 - Mask secret-like env assignments (`*_TOKEN`, `*_KEY`, `*_SECRET`, `PASSWORD`, `AUTH`, `CREDENTIAL`).
-- If suspicious values remain, do **not** auto-post; save locally and ask for confirmation.
-- Follow `references/rendering-rules.md` posting safety rules.
+- **NEVER** autonomously post to GitHub without explicit user confirmation. 
+- **NEVER** even prompt the user to post to GitHub if you detect sensitive redacted values (`[REDACTED:... ]`) or suspicious raw credentials in the logs. If sensitive content is found, only save locally and explicitly warn the user.
 
-Generate the markdown, then write it to `~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md` using your file-writing tool. Do **not** render the full markdown in chat.
+Generate the markdown via `pmtx format --out ~/.promptex/projects/{id}` to automatically save it safely. Do **not** render the full markdown in chat.
 
-**After writing the file**, post it as a comment to the open PR:
+**After writing the file**, you MUST prompt the user to confirm before posting to the open PR. Do not auto-post. Only if the user explicitly approves _and_ no sensitive data was flagged, post it as a comment:
 
 ```bash
+# Assuming the path was saved in $PROMPT_FILE
 gh pr view --json number -q '.number' 2>/dev/null && \
-  gh pr comment --body-file ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md
+  gh pr comment --body-file $PROMPT_FILE
 ```
 
 Then confirm with a brief one-line summary in chat — not the full markdown:

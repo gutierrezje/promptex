@@ -73,7 +73,7 @@ pmtx projects remove <N|id>  # Remove a project by number or full ID
 | Codex CLI / Desktop | ✅ Supported |
 | OpenCode | ⏳ Planned |
 | Cursor | ⏳ Planned |
-| GitHub Copilot | ⏳ Planned |
+| Gemini CLI / Antigravity | ⏳ Planned |
 
 ## Why Use PromptEx?
 

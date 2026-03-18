@@ -43,6 +43,24 @@ enum Commands {
         since: Option<String>,
     },
 
+    /// Format extracted JSON prompts into PR-ready markdown
+    Format {
+        /// Optional path to the JSON file to format. If omitted, reads from stdin.
+        #[arg(value_name = "FILE")]
+        file: Option<std::path::PathBuf>,
+
+        /// Optional directory to save the formatted markdown file.
+        /// If provided, `pmtx format` writes to `PROMPTS-YYYYMMDD-HHMM.md` in this directory
+        /// and prints the precise file path to stdout.
+        #[arg(long, value_name = "DIR")]
+        out: Option<std::path::PathBuf>,
+
+        /// If provided, `pmtx format` simply prints the current timestamp in `YYYYMMDD-HHMM` format
+        /// and exits immediately without waiting for standard input.
+        #[arg(long)]
+        date: bool,
+    },
+
     /// Check whether prompt extraction appears available in this repo
     Check,
 
@@ -79,6 +97,9 @@ fn main() -> Result<()> {
         }
         Commands::Check => {
             commands::check::execute()?;
+        }
+        Commands::Format { file, out, date } => {
+            commands::format::execute(file, out, date)?;
         }
         Commands::Status => {
             commands::status::execute()?;

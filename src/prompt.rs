@@ -38,6 +38,12 @@ pub struct PromptEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub assistant_context: Option<String>,
+
+    /// The categorization of this prompt (e.g., "Investigation", "Solution", "Testing", "Ignore").
+    /// This is typically populated by an LLM filtering step.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 impl PromptEntry {
@@ -61,6 +67,7 @@ impl PromptEntry {
             tool,
             model,
             assistant_context: None,
+            category: None,
         }
     }
 }
