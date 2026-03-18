@@ -57,8 +57,7 @@ enum Commands {
         file: Option<std::path::PathBuf>,
 
         /// Optional directory to save the formatted markdown file.
-        /// If provided, `pmtx format` writes to `PROMPTS-YYYYMMDD-HHMM.md` in this directory
-        /// and prints the precise file path to stdout.
+        /// If omitted, defaults to the project's internal tracking directory.
         #[arg(long, value_name = "DIR")]
         out: Option<std::path::PathBuf>,
 
@@ -66,6 +65,10 @@ enum Commands {
         /// and exits immediately without waiting for standard input.
         #[arg(long)]
         date: bool,
+
+        /// If provided, output is printed to stdout instead of saved to a file.
+        #[arg(long)]
+        stdout: bool,
     },
 
     /// Check whether prompt extraction appears available in this repo
@@ -108,8 +111,13 @@ fn main() -> Result<()> {
         Commands::Curate { decisions } => {
             commands::curate::execute(decisions)?;
         }
-        Commands::Format { file, out, date } => {
-            commands::format::execute(file, out, date)?;
+        Commands::Format {
+            file,
+            out,
+            date,
+            stdout,
+        } => {
+            commands::format::execute(file, out, date, stdout)?;
         }
         Commands::Status => {
             commands::status::execute()?;
