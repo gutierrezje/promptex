@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 /// A single extracted prompt and its surrounding context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptEntry {
+    /// Stable ID for this prompt (e.g. "codex-1710656289759")
+    #[serde(default)]
+    pub id: String,
+
     /// When this prompt was issued (ISO-8601)
     pub timestamp: DateTime<Utc>,
 
@@ -39,8 +43,8 @@ pub struct PromptEntry {
     #[serde(default)]
     pub assistant_context: Option<String>,
 
-    /// The categorization of this prompt (e.g., "Investigation", "Solution", "Testing", "Ignore").
-    /// This is typically populated by an LLM filtering step.
+    /// The categorization of this prompt (e.g., "Investigation", "Solution", "Testing").
+    /// This is populated by the `curate` pipeline applying a `decisions.json` map.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub category: Option<String>,
@@ -58,6 +62,7 @@ impl PromptEntry {
         model: Option<String>,
     ) -> Self {
         Self {
+            id: String::new(),
             timestamp: Utc::now(),
             branch,
             commit,

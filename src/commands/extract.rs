@@ -27,39 +27,39 @@ pub fn execute(
     };
     let scope = determine_scope(&flags)?;
 
-    eprintln!("🔍 Analyzing workspace...");
+    eprintln!("Analyzing workspace...");
     match &scope {
         ExtractionScope::BranchLifetime {
             branch,
             since_commit,
         } => {
-            eprintln!("  ✓ Branch: {branch} (since {})", &since_commit[..7]);
+            eprintln!("  * Branch: {branch} (since {})", &since_commit[..7]);
         }
         ExtractionScope::LastNCommits(n) => {
-            eprintln!("  ✓ Scope: last {n} commit(s)");
+            eprintln!("  * Scope: last {n} commit(s)");
         }
         ExtractionScope::SinceCommit(hash) => {
-            eprintln!("  ✓ Scope: since commit {hash}");
+            eprintln!("  * Scope: since commit {hash}");
         }
         ExtractionScope::Uncommitted => {
-            eprintln!("  ✓ Scope: uncommitted changes only");
+            eprintln!("  * Scope: uncommitted changes only");
         }
         ExtractionScope::SinceTime(since) => {
-            eprintln!("  ✓ Scope: since {}", since.format("%Y-%m-%d %H:%M UTC"));
+            eprintln!("  * Scope: since {}", since.format("%Y-%m-%d %H:%M UTC"));
         }
     }
 
     let ctx = build_git_context(&scope)?;
     eprintln!(
-        "  ✓ Time range: {} → {}",
+        "  * Time range: {} → {}",
         ctx.since.format("%Y-%m-%d %H:%M"),
         ctx.until.format("%Y-%m-%d %H:%M"),
     );
     if !ctx.commits.is_empty() {
-        eprintln!("  ✓ {} commit(s) in scope", ctx.commits.len());
+        eprintln!("  * {} commit(s) in scope", ctx.commits.len());
     }
     if !ctx.scope_files.is_empty() {
-        eprintln!("  ✓ {} file(s) in scope", ctx.scope_files.len());
+        eprintln!("  * {} file(s) in scope", ctx.scope_files.len());
     }
 
     let pid = project_id::get_project_id(&cwd)?;
@@ -68,21 +68,35 @@ pub fn execute(
         .primary_kind()
         .map(|k| k.label())
         .unwrap_or("none");
-    eprintln!("\n🔎 Loading prompts ({kind_label})...");
+    eprintln!("\nLoading prompts ({kind_label})...");
 
-    let (contributing, raw_entries, diagnostics) = extractor.extract_all(ctx.since, ctx.until)?;
+    let (contributing, mut raw_entries, diagnostics) =
+        extractor.extract_all(ctx.since, ctx.until)?;
     for (kind, count) in &contributing {
-        eprintln!("  ✓ {} — {count} entries", kind.label());
+        eprintln!("  * {} — {count} entries", kind.label());
     }
     if contributing.is_empty() {
-        eprintln!("  ✓ No entries found");
+        eprintln!("  * No entries found");
     }
-    eprintln!("  ✓ {} total in time range", raw_entries.len());
+    eprintln!("  * {} total in time range", raw_entries.len());
 
     print_warning_summary(&diagnostics);
 
+    let mut seen_ids = std::collections::HashSet::new();
+    for entry in &mut raw_entries {
+        let base_id = format!("{}-{}", entry.tool, entry.timestamp.timestamp_millis());
+        let mut final_id = base_id.clone();
+        let mut counter = 1;
+        while seen_ids.contains(&final_id) {
+            final_id = format!("{}-{}", base_id, counter);
+            counter += 1;
+        }
+        seen_ids.insert(final_id.clone());
+        entry.id = final_id;
+    }
+
     let entries = filter_by_scope(&raw_entries, &ctx);
-    eprintln!("  ✓ Filtered to {} relevant entries", entries.len());
+    eprintln!("  * Filtered to {} relevant entries", entries.len());
 
     if entries.is_empty() {
         eprintln!("\nNo prompts found for this scope.");
@@ -101,7 +115,7 @@ fn print_warning_summary(diagnostics: &ExtractionDiagnostics) {
     }
 
     eprintln!(
-        "  ⚠ {} non-fatal extraction warning(s)",
+        "  [WARNING] {} non-fatal extraction warning(s)",
         diagnostics.warnings.len()
     );
 

@@ -43,6 +43,13 @@ enum Commands {
         since: Option<String>,
     },
 
+    /// Curate prompts using an external decisions file
+    Curate {
+        /// Path to the JSON file containing the curation decisions
+        #[arg(long, value_name = "FILE")]
+        decisions: std::path::PathBuf,
+    },
+
     /// Format extracted JSON prompts into PR-ready markdown
     Format {
         /// Optional path to the JSON file to format. If omitted, reads from stdin.
@@ -97,6 +104,9 @@ fn main() -> Result<()> {
         }
         Commands::Check => {
             commands::check::execute()?;
+        }
+        Commands::Curate { decisions } => {
+            commands::curate::execute(decisions)?;
         }
         Commands::Format { file, out, date } => {
             commands::format::execute(file, out, date)?;

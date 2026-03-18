@@ -7,12 +7,7 @@ use crate::prompt::PromptEntry;
 pub fn render_markdown(report: &ExtractionReport) -> String {
     let mut out = String::new();
 
-    // Filter out 'Ignore' category
-    let mut entries: Vec<&PromptEntry> = report
-        .entries
-        .iter()
-        .filter(|e| e.category.as_deref().unwrap_or("") != "Ignore")
-        .collect();
+    let mut entries: Vec<&PromptEntry> = report.entries.iter().collect();
 
     if entries.is_empty() {
         return "No prompts found for this scope.".to_string();
@@ -364,48 +359,6 @@ fn extract_question(ctx: &str) -> Option<String> {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
-
-    #[test]
-    fn render_markdown_ignores_prompts_with_ignore_category() {
-        let since = Utc.with_ymd_and_hms(2026, 3, 1, 10, 0, 0).unwrap();
-        let until = Utc.with_ymd_and_hms(2026, 3, 1, 11, 0, 0).unwrap();
-
-        let mut entry1 = PromptEntry::new(
-            "main".to_string(),
-            "".to_string(),
-            "do something".to_string(),
-            vec![],
-            vec![],
-            "codex".to_string(),
-            None,
-        );
-        entry1.category = Some("Investigation".to_string());
-
-        let mut entry2 = PromptEntry::new(
-            "main".to_string(),
-            "".to_string(),
-            "noisy prompt".to_string(),
-            vec![],
-            vec![],
-            "codex".to_string(),
-            None,
-        );
-        entry2.category = Some("Ignore".to_string());
-
-        let report = ExtractionReport {
-            scope: "uncommitted".to_string(),
-            since,
-            until,
-            commits: vec![],
-            scope_files: vec![],
-            entries: vec![entry1, entry2],
-            warnings: vec![],
-        };
-
-        let md = render_markdown(&report);
-        assert!(md.contains("do something"));
-        assert!(!md.contains("noisy prompt"));
-    }
 
     #[test]
     fn render_markdown_escapes_backticks() {

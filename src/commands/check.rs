@@ -19,16 +19,16 @@ pub fn execute() -> Result<()> {
     match extractor.primary_kind() {
         Some(kind) => {
             if kind.readiness() == "supported" {
-                eprintln!("✓ Supported: {}", kind.label());
+                eprintln!("* Supported: {}", kind.label());
                 eprintln!("  Prompts are captured automatically — no setup required.");
             } else {
-                eprintln!("⚠ WIP support detected: {}", kind.label());
+                eprintln!("Warning: WIP support detected: {}", kind.label());
                 eprintln!("  Extraction exists, but treat results as provisional.");
             }
             eprintln!("  Run `pmtx extract` when ready to generate PR output.");
         }
         None => {
-            eprintln!("⚠ No supported tool detected in your current environment.");
+            eprintln!("Warning: No supported tool detected in your current environment.");
             eprintln!("  pmtx currently supports Claude Code and Codex CLI/Desktop.");
             std::process::exit(1);
         }

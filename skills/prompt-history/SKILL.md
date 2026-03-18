@@ -36,9 +36,23 @@ When the user wants PR-ready output, run:
 pmtx extract [scope-flags]
 ```
 
-This outputs structured JSON containing the curated entries. You then:
-1. **Categorize and Filter** entries by modifying the JSON payload in memory. Add `"category": "Investigation"`, `"category": "Solution"`, `"category": "Testing"`, or `"category": "Ignore"` to each entry object.
-2. **Format** the resulting JSON by piping it to `pmtx format > out.md` which will generate the PR markdown formatting for you.
+This outputs a canonical JSON payload where every prompt has a stable `"id"`. You then:
+1. **Categorize and Filter** entries by analyzing the payload and creating a lightweight sidecar file, e.g. `decisions.json`.
+   Write exactly the IDs you want to keep and assign their category:
+   ```json
+   {
+     "version": 1,
+     "decisions": {
+       "codex-1234567": { "action": "keep", "category": "Solution" },
+       "claude-987654": { "action": "keep", "category": "Investigation" }
+     }
+   }
+   ```
+   **Important:** Any ID not explicitly mentioned in the `decisions.json` map will be *automatically dropped*. You do NOT need to write out `"action": "drop"` for noise entries! Simply map the prompts you want to keep.
+2. **Curate and Format** the result by piping the payload through the processing chain:
+   ```bash
+   cat extracted.json | pmtx curate --decisions decisions.json | pmtx format --out ~/.promptex/projects/{id}
+   ```
 
 ### Empty-result handling
 
@@ -65,16 +79,17 @@ If the user provided flags, use them. Otherwise infer from context:
 
 ### Categorization
 
-Assign each entry a `"category"` attribute in the JSON payload:
+Assign each retained entry a `"category"` attribute in your `decisions.json` map:
 
 - **`Investigation`** — exploring or understanding (reading code, design questions, error analysis)
 - **`Solution`** — implementing or changing behavior (edits, fixes, refactors, config)
 - **`Testing`** — validating behavior (tests, checks, verification)
-- **`Ignore`** — noise to drop completely from the final output
 
 **`assistant_context`**: use it when need to disambiguate intent, especially for short approvals ("yes", "go ahead") and mixed messages. Edit to earliest complete sentence.
 
-**Noise entries to ignore (mark as `"category": "Ignore"`):**
+### Filtering
+
+**Noise entries to ignore (simply omit from `decisions.json`):**
 - Meta prompts about running pmtx itself (extract/summarize/invoke skill)
 - Entries with no tool calls and no files touched, unless they contain meaningful design reasoning
 - Near-duplicate prompts; keep the most recent version
@@ -85,13 +100,13 @@ When in doubt, keep the entry (Investigation/Solution/Testing). The user can alw
 
 ### Formatting
 
-Do not attempt to write the markdown formatting string manually. Once you've added standard `"category"` strings to the JSON, write that JSON to a temporary file or pipe it to the formatting engine:
+Do not attempt to write the markdown formatting string manually. Once you've created your `decisions.json` sidecar, pipe the original extracted JSON through the curate and format engines:
 
 ```bash
-cat categorized.json | pmtx format --out ~/.promptex/projects/{id}
+cat extracted.json | pmtx curate --decisions decisions.json | pmtx format --out ~/.promptex/projects/{id}
 ```
 
-The `pmtx format --out` command will automatically generate a file named `PROMPTS-YYYYMMDD-HHMM.md` and print its absolute path to stdout. Capture this output to use in subsequent commands.
+The `pmtx format --out` command will automatically generate a file named `PROMPTS-YYYYMMDD-HHMM.md` and print its absolute path to stdout. Capture this output to use in subsequent commands. You can safely delete the temporary `extracted.json` and `decisions.json` files after the markdown is saved.
 
 ### Security gate before writing or posting
 
@@ -115,14 +130,14 @@ gh pr view --json number -q '.number' 2>/dev/null && \
 Then confirm with a brief one-line summary in chat — not the full markdown:
 
 ```
-✓ N prompts (X investigation, Y solution, Z testing) · Xh Ym · posted to PR #N
+* N prompts (X investigation, Y solution, Z testing) · Xh Ym · posted to PR #N
   Saved to ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md
 ```
 
 If no open PR is detected, skip the comment step and tell the user:
 
 ```
-✓ N prompts (X investigation, Y solution, Z testing) · Xh Ym
+* N prompts (X investigation, Y solution, Z testing) · Xh Ym
   Saved to ~/.promptex/projects/{id}/PROMPTS-YYYYMMDD-HHMM.md
   No open PR found — run `gh pr comment --body-file <path>` when ready.
 ```

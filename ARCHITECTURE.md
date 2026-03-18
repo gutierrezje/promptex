@@ -1,6 +1,6 @@
 # PromptEx Architecture
 
-PromptEx (`pmtx`) extracts AI prompt history from tool session logs and correlates it to git history, producing structured output that an agent renders into PR-ready markdown.
+PromptEx (`pmtx`) extracts AI prompt history from tool session logs, correlates it to git history, applies semantic curation via a lightweight decisions sidecar, and renders PR-ready markdown.
 
 ---
 
@@ -12,30 +12,39 @@ AI-assisted OSS contributions carry invisible reasoning. A maintainer sees the c
 
 ## System Overview
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         pmtx extract                            │
-│                                                                 │
-│  Git State ──► Scope ──► Time Window                            │
-│                               │                                 │
-│  AI Tool Logs ────────────────┤                                 │
-│   ~/.claude/...               │                                 │
-│   ~/.codex/...                ▼                                 │
-│                          Raw Entries                            │
-│                               │                                 │
-│                          Correlation  ◄── Scope Files           │
-│                               │                                 │
-│                          JSON Output ──────────────────────────►│
-└─────────────────────────────────────────────────────────────────┘
-                                                                  │
-                                                                  ▼
-                                                          Agent (Claude)
-                                                                  │
-                                                     Noise filtering + Dedup
-                                                                  │
-                                                     Semantic Categorization
-                                                                  │
-                                                          PR Markdown
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│                          pmtx extract                            │
+│                                                                  │
+│  Git State ──► Scope ──► Time Window                             │
+│                               │                                  │
+│  AI Tool Logs ────────────────┤                                  │
+│   ~/.claude.json              │                                  │
+│   ~/.codex/...                ▼                                  │
+│   ~/.gemini/                  Raw Entries                        │
+│                               │                                  │
+│                          Correlation  ◄── Scope Files            │
+│                               │                                  │
+│                    Canonical JSON Output ───────────────────────►│
+└───────────────────────────────┬──────────────────────────────────┘
+                                │
+   ┌────────────────────────────▼─────────────────────────────┐
+   │                       pmtx curate                        │
+   │                                                          │
+   │               Canonical JSON (from stdin)                │
+   │                            +                             │
+   │               decisions.json (from LLM/TUI)              │
+   │                            =                             │
+   │  Curated JSON Output (Categorized, noise filtered)       │
+   └──────────────────────────────────────────────────────────┘
+                                │
+   ┌────────────────────────────▼─────────────────────────────┐
+   │                       pmtx format                        │
+   │                                                          │
+   │            Consumes Curated JSON (from stdin)            │
+   │                            │                             │
+   │                    Markdown Output                       │
+   └──────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -57,13 +66,11 @@ Before reading any logs, `pmtx` determines *what range of work* to cover. Scope 
 | Mainline + uncommitted (smart default) | Same as `--uncommitted` |
 | Mainline, no changes (smart default) | Last 1 commit |
 
-The scope resolves to a **time window** (`since`, `until`) and a **file set** — the files touched by the commits in scope.
-
 ### 2. Git Context (`src/analysis/correlation.rs`, `src/analysis/git.rs`)
 
 Given the scope, `build_git_context` shells out to git to produce a `GitContext`:
 
-```
+```rust
 GitContext {
     since: DateTime<Utc>,   // start of time window
     until: DateTime<Utc>,   // end of time window (usually now)
@@ -80,83 +87,71 @@ Each supported AI tool has a dedicated extractor that reads its direct log forma
 
 **Claude Code** (`claude_code.rs`)
 - Reads `~/.claude/projects/{slug}/*.jsonl`
-- JSONL format with `type: "user"` turns containing prompt text, tool calls, and file paths
 
 **Codex CLI / Desktop** (`codex.rs`)
 - Reads `~/.codex/sessions/YYYY/MM/DD/rollout-{timestamp}-{uuid}.jsonl`
-- JSONL with `session_meta` on line 0, then `event_msg` (user messages) and `response_item` (tool calls) events
-- Timestamps extracted per-message from `event_msg` payloads — not from session metadata alone
 
 All extractors produce a common `PromptEntry`:
 
-```
+```rust
 PromptEntry {
+    id: String,               // {tool}-{timestamp_ms}
     timestamp: DateTime<Utc>,
     branch: String,
     commit: String,
     prompt: String,           // the user's message text
     files_touched: Vec<String>,
-    tool_calls: Vec<String>,  // normalized tool names (e.g. ["Read", "Write", "Explore", "Bash"])
-    tool: String,             // "claude-code" | "codex"
-    model: Option<String>,    // model name if present in logs
-    assistant_context: Option<String>, // tail of preceding assistant turn
+    tool_calls: Vec<String>,  // normalized tool names
+    tool: String,             
+    model: Option<String>,    
+    assistant_context: Option<String>, 
+    category: Option<String>, // Injected during curation
 }
 ```
 
 Extraction is bounded by the time window from step 2 — only entries within `[since, until]` are read.
 
-Tool calls are normalized into a shared vocabulary (`Read`, `Write`, `Explore`, `Bash`, `Skill`) so downstream renderers can treat extractors consistently even when the underlying log formats differ.
+### 4. Correlation & Redaction (`src/analysis/correlation.rs`, `src/curation/redact.rs`)
 
-### 4. Correlation (`src/analysis/correlation.rs`)
+Raw entries are filtered down. An entry passes if its timestamp falls within the time window, **and** it has file overlap with `scope_files` or its timestamp closely precedes a scoped commit.
 
-Raw entries are filtered down to those *relevant to the scope*. An entry passes if:
-- Its timestamp falls within the time window, **and**
-- It has file overlap with `scope_files` **or** its timestamp closely precedes a scoped commit
+Redaction strips secrets, API tokens, and email addresses from prompt text before any output. Runs in-process before JSON serialization — best effort.
 
-This prevents unrelated work from the same session leaking into the output.
+### 5. Curation (`src/commands/curate.rs`)
 
-### 5. Redaction (`src/curation/redact.rs`)
+`pmtx extract` emits a massive Canonical JSON payload. To categorize prompts without requiring an LLM to rewrite the entire JSON envelope, we use a patch-based approach:
 
-Strips secrets, API tokens, and email addresses from prompt text before any output. Runs in-process before JSON serialization — nothing leaves the binary unredacted.
+- The LLM (or a human TUI) reads the payload and emits a tiny `decisions.json` map:
+  ```json
+  {
+    "version": 1,
+    "decisions": {
+      "codex-1710656289759": { "action": "keep", "category": "Solution" },
+      "claude-2834710293481": { "action": "drop" }
+    }
+  }
+  ```
+- `pmtx curate --decisions decisions.json` consumes the canonical JSON from stdin, looks up each prompt by its stable ID, applies the decision, and outputs the curated JSON.
 
-### 6. Output (`src/output/`)
+### 6. Formatting (`src/commands/format.rs`, `src/output/markdown_format.rs`)
 
-`pmtx extract` always emits **structured JSON** to stdout:
-
-```json
-{
-  "scope": "branch-lifetime",
-  "since": "...",
-  "until": "...",
-  "commits": [{ "short_hash": "abc1234", "message": "..." }],
-  "scope_files": ["src/auth.rs", "src/lib.rs"],
-  "entries": [ /* curated PromptEntry objects */ ]
-}
-```
-
-The agent receives this envelope and handles noise filtering, deduplication, semantic categorization, and rendering — guided by the skill's `references/rendering-rules.md`.
+`pmtx format` consumes the curated JSON and deterministically renders the PR-ready markdown. This cleanly decouples formatting layout from the semantic AI skill.
 
 ---
 
-## The Agent Split
+## The AI Split
 
-This is the key architectural decision: **pmtx handles deterministic work; the agent handles semantic work.**
+This is the key architectural decision: **pmtx handles deterministic data routing and layout; the AI handles semantic judgment.**
 
 | pmtx (deterministic) | Agent (semantic) |
 |----------------------|------------------|
-| Time window math | Noise filtering (artifact, meta-prompts) |
+| Time window math | Filtering out noise (tangential meta-prompts) |
 | File overlap correlation | Near-duplicate detection |
 | Secret redaction | Categorization (Investigation / Solution / Testing) |
-| Git shell-outs | Rendering judgment calls |
-| | Writing the markdown file |
+| JSON generation | Producing the `decisions.json` map |
+| PR Markdown string formatting | |
 
-**Guiding principle: prefer LLM over expert systems.** When faced with a classification or quality problem, the instinct to build a heuristic in Rust (word counts, regex filters, fixed taxonomies) should be resisted. The agent handles these more reliably and adapts without code changes.
-
-Rule-based categorization was tried and abandoned. Categories like "Investigation" vs "Solution" depend on intent — "look at auth.rs" could be either, depending on whether a fix followed. A language model reading the prompt text and `assistant_context` makes these calls more reliably than keyword matching.
-
-This principle recurs throughout the codebase. `assistant_context` is captured raw and passed through; quality filtering (sentence boundaries, formatting artifacts) belongs to the agent layer, not the Rust extractor. When in doubt: if the problem requires understanding *meaning*, it belongs to the agent.
-
----
+**Guiding principle:** When faced with a classification or quality problem that requires understanding *meaning*, it belongs to the AI agent. When it involves heavy string manipulation, byte sizes, or rigid syntax, it belongs to Rust.
 
 ## Storage
 
@@ -166,11 +161,11 @@ All state lives in `~/.promptex/projects/{id}/` — never in the project directo
 
 ## Module Map
 
-```
+```text
 src/
 ├── main.rs                   Entry point, clap command dispatch
 ├── project_id.rs             Derive project ID from git remote
-├── prompt.rs                 PromptEntry — shared data type produced by extractors
+├── prompt.rs                 PromptEntry — shared data type
 ├── analysis/
 │   ├── scope.rs              ExtractionScope enum + determine_scope()
 │   ├── git.rs                Git shell-outs (branch, commits, files)
@@ -183,9 +178,12 @@ src/
 ├── curation/
 │   └── redact.rs             Secret/token/email redaction
 ├── output/
-│   └── json_format.rs        JSON envelope serialization
+│   ├── json_format.rs        JSON envelope serialization
+│   └── markdown_format.rs    PR format renderer
 └── commands/
-    ├── extract.rs            Full pipeline orchestration
+    ├── extract.rs            Full extraction orchestration
+    ├── curate.rs             Decision manifest application
+    ├── format.rs             Markdown renderer command
     ├── check.rs              Tool support detection
     ├── status.rs             Project/prompt stats
     └── projects.rs           List + remove projects

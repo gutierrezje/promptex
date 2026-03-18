@@ -173,6 +173,7 @@ mod tests {
 
     fn make_entry(ts: DateTime<Utc>, files: &[&str], tool_calls: &[&str]) -> PromptEntry {
         PromptEntry {
+            id: String::new(),
             timestamp: ts,
             branch: "feature/test".to_string(),
             commit: "abc1234".to_string(),

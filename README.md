@@ -83,7 +83,7 @@ pmtx projects remove <N|id>  # Remove a project by number or full ID
 - **Zero pollution**: No files in project directory, no `.gitignore` needed
 - **Privacy-first**: Auto-redacts secrets, tokens, and emails from all output
 - **Git-aware**: Feature branches, fork workflows, commit-based and time-based scoping
-- **Fast**: Local processing, no API calls, Rust performance
+- **Fast**: Local processing, efficient LLM usage, Rust performance
 
 ## Development
 
