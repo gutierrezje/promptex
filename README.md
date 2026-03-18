@@ -59,7 +59,7 @@ Output is always structured JSON. Feed it to an agent (via the skill) to get PR-
 ### Other commands
 
 ```bash
-pmtx check                   # Check if your AI tool is supported (exit 0 = yes, exit 1 = unsupported)
+pmtx check                   # Detect supported tools, active logs, or unsupported tool usage (exit 0 = supported installed)
 pmtx status                  # Show current project info and extraction count
 pmtx projects list           # List all tracked projects
 pmtx projects remove <N|id>  # Remove a project by number or full ID

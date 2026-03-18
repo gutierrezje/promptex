@@ -15,8 +15,11 @@
 
 pub mod claude_code;
 pub mod codex;
+pub mod detection;
 pub mod opencode; // kept for future rewrite — not wired into detect()
 pub mod traits;
+
+pub use detection::{detect_all_with_recency, ToolDetection, ToolPresenceStatus, ToolSupport};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -84,14 +87,6 @@ impl ExtractorKind {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex CLI / Desktop",
-        }
-    }
-
-    /// Short readiness label for CLI output.
-    pub fn readiness(&self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "supported",
-            Self::Codex => "supported",
         }
     }
 }
@@ -191,7 +186,6 @@ pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
 
     ActiveExtractor { sources }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

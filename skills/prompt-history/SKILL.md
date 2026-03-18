@@ -95,19 +95,20 @@ Assign each retained entry a `"category"` attribute in your `decisions.json` map
 - Entries with no tool calls and no files touched, unless they contain meaningful design reasoning
 - Near-duplicate prompts; keep the most recent version
 - Short replies with no meaningful tool calls and no clear proposal in `assistant_context`
-- Git/workflow housekeeping with no files touched (switch/push/merge/PR admin)
+- Git/workflow operations and discussions/questions that are not related to codebase files
 
 When in doubt, keep the entry (Investigation/Solution/Testing). The user can always trim.
 
-### Formatting
+### Output Generation
 
-Do not attempt to write the markdown formatting string manually. Once you've created your `decisions.json` sidecar, pipe the original extracted JSON through the curate and format engines:
+Do not attempt to write the markdown formatting string manually. Once you've created your `decisions.json`, run the final assembly pipeline:
 
 ```bash
 cat extracted.json | pmtx curate --decisions decisions.json | pmtx format
 ```
 
-The `pmtx format` command will automatically generate a file named `PROMPTS-YYYYMMDD-HHMM.md` in the project's tracking directory and print its absolute path to stdout. Capture this output to use in subsequent commands. You can safely delete the temporary `extracted.json` and `decisions.json` files after the markdown is saved.
+The `pmtx format` command will automatically generate a file named `PROMPTS-YYYYMMDD-HHMM.md` in the project's tracking directory and print its absolute path to stdout. Capture this output to use in subsequent commands. You MUST delete the temporary `extracted.json` and `decisions.json` files after the markdown is saved to keep the user's workspace clean.
+
 
 ## Security Guardrails
 
