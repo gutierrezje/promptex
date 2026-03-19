@@ -13,21 +13,18 @@ AI-assisted OSS contributions carry invisible reasoning. A maintainer sees the c
 ## System Overview
 
 ```text
-┌──────────────────────────── Inputs ─────────────────────────────┐
-│ git state + diffs      Claude Code logs      Codex logs         │
-└──────────────┬────────────────────┬────────────────────┬────────┘
-               │                    │                    │
-               └──────────────┬─────┴──────────────┬─────┘
-                              ▼                    ▼
+      ┌─────────────────────────── Inputs ──────────────────────────┐
+      │ git state + diffs                              Logs         │
+      └───────────┬────────────────────────────────────────┬────────┘
+                  │                                        │
+                  └─────────--------──┬────────────────────┘
+                                      ▼                    
                   ┌─────────────────────────────────────────┐
                   │              pmtx extract               │
                   │                                         │
-                  │ - Resolve scope from git/flags          │
-                  │ - Build git context (since/until/files) │
+                  │ - Resolve scope from git + flags        │
                   │ - Parse tool logs in time window        │
-                  │ - Correlate to scoped files/commits     │
-                  │ - Redact sensitive values               │
-                  │ - Assign stable entry IDs               │
+                  │ - Correlate to scoped filescommits      │
                   └───────────────────┬─────────────────────┘
                                       │ stdout (JSON)
                                       ▼
@@ -39,16 +36,16 @@ AI-assisted OSS contributions carry invisible reasoning. A maintainer sees the c
                   │              pmtx curate                │
                   │ - apply keep/drop                       │
                   └───────────────────┬─────────────────────┘
-                                      │ stdout (curated JSON)
+                                      │ curated JSON
                                       ▼
                   ┌─────────────────────────────────────────┐
                   │              pmtx format                │
                   │ - deterministic markdown renderer       │
                   └─────────────────────────────────────────┘
                                       │               
-                                      │ default       
+                                      │       
                                       ▼               
-              ~/.promptex/projects/<id>/PROMPTS-YYYYMMDD-HHMM.md
+                                Markdown file
 ```
 
 ---
