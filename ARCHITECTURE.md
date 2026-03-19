@@ -13,38 +13,42 @@ AI-assisted OSS contributions carry invisible reasoning. A maintainer sees the c
 ## System Overview
 
 ```text
-┌──────────────────────────────────────────────────────────────────┐
-│                          pmtx extract                            │
-│                                                                  │
-│  Git State ──► Scope ──► Time Window                             │
-│                               │                                  │
-│  AI Tool Logs ────────────────┤                                  │
-│   ~/.claude.json              │                                  │
-│   ~/.codex/...                ▼                                  │
-│   ~/.gemini/                  Raw Entries                        │
-│                               │                                  │
-│                          Correlation  ◄── Scope Files            │
-│                               │                                  │
-│                    Canonical JSON Output ───────────────────────►│
-└───────────────────────────────┬──────────────────────────────────┘
-                                │
-   ┌────────────────────────────▼─────────────────────────────┐
-   │                       pmtx curate                        │
-   │                                                          │
-   │               Canonical JSON (from stdin)                │
-   │                            +                             │
-   │               decisions.json (from LLM/TUI)              │
-   │                            =                             │
-   │  Curated JSON Output (Categorized, noise filtered)       │
-   └──────────────────────────────────────────────────────────┘
-                                │
-   ┌────────────────────────────▼─────────────────────────────┐
-   │                       pmtx format                        │
-   │                                                          │
-   │            Consumes Curated JSON (from stdin)            │
-   │                            │                             │
-   │                    Markdown Output                       │
-   └──────────────────────────────────────────────────────────┘
+┌──────────────────────────── Inputs ─────────────────────────────┐
+│ git state + diffs      Claude Code logs      Codex logs         │
+└──────────────┬────────────────────┬────────────────────┬────────┘
+               │                    │                    │
+               └──────────────┬─────┴──────────────┬─────┘
+                              ▼                    ▼
+                  ┌─────────────────────────────────────────┐
+                  │              pmtx extract               │
+                  │                                         │
+                  │ - Resolve scope from git/flags          │
+                  │ - Build git context (since/until/files) │
+                  │ - Parse tool logs in time window        │
+                  │ - Correlate to scoped files/commits     │
+                  │ - Redact sensitive values               │
+                  │ - Assign stable entry IDs               │
+                  └───────────────────┬─────────────────────┘
+                                      │ stdout (JSON)
+                                      ▼
+                      extraction_report.json (canonical)
+                                      │
+                                      │ + decisions.json (LLM/human)
+                                      ▼
+                  ┌─────────────────────────────────────────┐
+                  │              pmtx curate                │
+                  │ - apply keep/drop                       │
+                  └───────────────────┬─────────────────────┘
+                                      │ stdout (curated JSON)
+                                      ▼
+                  ┌─────────────────────────────────────────┐
+                  │              pmtx format                │
+                  │ - deterministic markdown renderer       │
+                  └─────────────────────────────────────────┘
+                                      │               
+                                      │ default       
+                                      ▼               
+              ~/.promptex/projects/<id>/PROMPTS-YYYYMMDD-HHMM.md
 ```
 
 ---

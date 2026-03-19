@@ -15,14 +15,14 @@ PromptEx (`pmtx`) reads AI tool session logs, correlates prompts to git changes 
 
 ## On start
 
-Run once to verify your tool is supported:
+Run once to verify your environment has at least one supported tool:
 
 ```bash
 pmtx check
 ```
 
-- **Exit 0**: your tool's logs are captured automatically. Run `pmtx extract` when ready.
-- **Exit 1**: your tool isn't supported yet. pmtx currently supports Claude Code and Codex CLI/Desktop.
+- **Exit 0**: at least one supported tool is detected. Run `pmtx extract` when ready.
+- **Exit 1**: no supported tool was detected in this environment. pmtx currently supports Claude Code and Codex CLI/Desktop.
 
 If `pmtx` is not found, see [Troubleshooting](#troubleshooting) below.
 
@@ -107,7 +107,15 @@ Do not attempt to write the markdown formatting string manually. Once you've cre
 cat extracted.json | pmtx curate --decisions decisions.json | pmtx format
 ```
 
-The `pmtx format` command will automatically generate a file named `PROMPTS-YYYYMMDD-HHMM.md` in the project's tracking directory and print its absolute path to stdout. Capture this output to use in subsequent commands. You MUST delete the temporary `extracted.json` and `decisions.json` files after the markdown is saved to keep the user's workspace clean.
+The `pmtx format` command will automatically generate a file named `PROMPTS-YYYYMMDD-HHMM.md` in the project's tracking directory and print its absolute path to stdout. Capture this output to use in subsequent commands.
+
+Useful option when you need markdown text in a pipeline instead of a saved file:
+
+```bash
+pmtx format --stdout
+```
+
+You MUST delete the temporary `extracted.json` and `decisions.json` files after the markdown is saved to keep the user's workspace clean.
 
 
 ## Security Guardrails
