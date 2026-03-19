@@ -95,7 +95,11 @@ fn collect_jsonl_files(dir: &Path) -> Vec<PathBuf> {
         let path = entry.path();
         if path.is_dir() {
             files.extend(collect_jsonl_files(&path));
-        } else if path.extension().is_some_and(|ext| ext == "jsonl") {
+        } else if path.extension().is_some_and(|ext| ext == "jsonl")
+            && path
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("rollout-"))
+        {
             files.push(path);
         }
     }
@@ -506,14 +510,28 @@ fn collect_turn_tools(events: &[Value], start: usize) -> (Vec<String>, Vec<Strin
             break;
         }
 
+        let mut turn_tools = Vec::new();
+        let mut turn_files = Vec::new();
+
         match event.get("type").and_then(|v| v.as_str()) {
             Some("response_item") => {
-                collect_response_item_tool_event(event, &mut tool_calls, &mut files_touched)
+                collect_response_item_tool_event(event, &mut turn_tools, &mut turn_files)
             }
             Some("event_msg") => {
-                collect_event_msg_tool_event(event, &mut tool_calls, &mut files_touched)
+                collect_event_msg_tool_event(event, &mut turn_tools, &mut turn_files)
             }
             _ => {}
+        }
+
+        for tool in turn_tools {
+            if !tool_calls.contains(&tool) {
+                tool_calls.push(tool);
+            }
+        }
+        for file in turn_files {
+            if !files_touched.contains(&file) {
+                files_touched.push(file);
+            }
         }
     }
 
@@ -1082,6 +1100,28 @@ mod tests {
     }
 
     #[test]
+    fn test_collect_turn_tools_deduplicates_and_maps_canonical() {
+        let events = vec![
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {"type": "mcp_tool_call_begin", "name": "edit", "arguments": {"path": "src/a.rs"}}
+            }),
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {"type": "mcp_tool_call_begin", "name": "edit", "arguments": {"path": "src/a.rs"}}
+            }),
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {"type": "mcp_tool_call_begin", "name": "view", "arguments": {"path": "src/b.rs"}}
+            }),
+        ];
+
+        let (tool_calls, files_touched) = collect_turn_tools(&events, 0);
+        assert_eq!(tool_calls, vec!["Write", "Read"]);
+        assert_eq!(files_touched, vec!["src/a.rs", "src/b.rs"]);
+    }
+
+    #[test]
     fn test_response_item_tool_calls_and_paths() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir
@@ -1348,6 +1388,13 @@ mod tests {
         assert_eq!(output.warnings.len(), 1);
         assert!(output.warnings[0].contains("skipped invalid JSON line at"));
         assert!(output.warnings[0].contains("rollout-2026-03-01T13-56-17-testuuid.jsonl"));
+
+        crate::extractors::test_contract::assert_entries_contract(
+            &output.entries,
+            Path::new("/proj"),
+            since,
+            until,
+        );
     }
 
     #[test]

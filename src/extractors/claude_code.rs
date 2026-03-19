@@ -186,9 +186,10 @@ struct MessageBody {
 ///
 /// Rules:
 /// - Absolute paths under `project_root` are rewritten to repo-relative paths.
-/// - Relative paths are kept as-is.
+/// - Relative paths are kept as-is if they don't escape `project_root`.
 /// - Absolute paths outside `project_root` are dropped.
 /// - Home-relative (`~/...`) paths are dropped.
+/// - Any path containing parent traversal (`..`) is dropped.
 fn normalize_files_touched_path(path: &str, project_root: &Path) -> Option<String> {
     let trimmed = path.trim();
     if trimmed.is_empty() || trimmed == "~" || trimmed.starts_with("~/") {
@@ -196,6 +197,12 @@ fn normalize_files_touched_path(path: &str, project_root: &Path) -> Option<Strin
     }
 
     let p = Path::new(trimmed);
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+
     if p.is_absolute() {
         return p
             .strip_prefix(project_root)
@@ -591,6 +598,11 @@ mod tests {
             None
         );
         assert_eq!(normalize_files_touched_path("~/secrets.txt", root), None);
+        assert_eq!(normalize_files_touched_path("../outside.rs", root), None);
+        assert_eq!(
+            normalize_files_touched_path("src/../../escape.rs", root),
+            None
+        );
     }
 
     #[test]
@@ -686,6 +698,27 @@ mod tests {
             git_branch: None,
             timestamp: None,
         }
+    }
+
+    #[test]
+    fn test_collect_assistant_context_deduplicates_and_maps_canonical() {
+        let messages = vec![
+            raw_assistant_tool_use("bash", None),
+            raw_tool_result_turn(),
+            raw_assistant_tool_use("write_file", Some("src/foo.rs")),
+            raw_tool_result_turn(),
+            raw_assistant_tool_use("write_file", Some("src/foo.rs")),
+            raw_tool_result_turn(),
+            raw_assistant_tool_use("read_file", Some("src/bar.rs")),
+            raw_tool_result_turn(),
+            raw_human_turn("done"),
+        ];
+
+        let (tool_calls, files_touched) = collect_assistant_context(&messages, 0);
+
+        // write_file maps to Write, read_file to Read. bash maps to Bash.
+        assert_eq!(tool_calls, vec!["Bash", "Write", "Read"]);
+        assert_eq!(files_touched, vec!["src/foo.rs", "src/bar.rs"]);
     }
 
     #[test]
@@ -828,5 +861,12 @@ mod tests {
         assert_eq!(output.warnings.len(), 1);
         assert!(output.warnings[0].contains("skipped invalid JSON line at"));
         assert!(output.warnings[0].contains("session-1.jsonl"));
+
+        crate::extractors::test_contract::assert_entries_contract(
+            &output.entries,
+            log_dir.path(),
+            since,
+            until,
+        );
     }
 }

@@ -162,6 +162,8 @@ fn warning_summary_lines(diagnostics: &ExtractionDiagnostics) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::extractors::{ExtractionDiagnostics, ExtractionWarning, ExtractorKind};
+    use chrono::Utc;
+    use std::path::Path;
 
     #[test]
     fn test_print_warning_summary_empty() {
@@ -220,5 +222,33 @@ mod tests {
             .iter()
             .any(|line| line == "    - Codex CLI / Desktop: 2"));
         assert!(!lines.iter().any(|line| line.contains("... and")));
+    }
+
+    #[test]
+    fn test_contract_helper_for_normalized_entries() {
+        use chrono::TimeZone;
+        let since = Utc.with_ymd_and_hms(2024, 1, 15, 10, 0, 0).unwrap();
+        let until = Utc.with_ymd_and_hms(2024, 1, 15, 14, 0, 0).unwrap();
+        let project_root = Path::new("/proj");
+
+        let entry = crate::prompt::PromptEntry::new(
+            "main".to_string(),
+            "abc".to_string(),
+            "fix it".to_string(),
+            vec!["src/lib.rs".to_string()],
+            vec!["Write".to_string()],
+            "claude-code".to_string(),
+            None,
+        );
+        let mut entry = entry;
+        entry.timestamp = since + chrono::Duration::hours(1);
+
+        let entries = vec![entry];
+        crate::extractors::test_contract::assert_entries_contract(
+            &entries,
+            project_root,
+            since,
+            until,
+        );
     }
 }

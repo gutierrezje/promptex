@@ -9,9 +9,13 @@ use super::ExtractorOutput;
 /// A source that can produce prompt entries from an AI tool's session logs.
 ///
 /// The trait is intentionally flexible because log formats vary widely
-/// (per-project folders, global sessions, SQLite storage, etc.). When a field
-/// or behavior is unsupported by a tool, prefer leaving it empty rather than
-/// fabricating values.
+/// (per-project folders, global sessions, SQLite storage, etc.). While
+/// extractor implementations vary internally, they are expected to emit
+/// `PromptEntry` values that meet shared output contracts:
+/// - Prompts are non-empty.
+/// - Timestamps are within the requested window.
+/// - Tool names are normalized to canonical labels (Read, Write, Bash, Explore, Skill).
+/// - Touched files are repo-relative paths (no absolute paths or parent traversal).
 pub trait PromptExtractor {
     /// Returns true if this tool's logs exist and are readable for `project_root`.
     fn is_available(project_root: &Path) -> bool

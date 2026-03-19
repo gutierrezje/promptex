@@ -34,7 +34,7 @@ npx skills add gutierrezje/promptex
 
 ## How It Works
 
-1. **Log extraction**: Reads prompts directly from AI tool session logs — no agent setup required, zero token overhead. JSON output always includes full non-fatal warnings for parse issues; stderr provides a human summary.
+1. **Log extraction**: Reads prompts directly from AI tool session logs — no agent setup required, zero token overhead. Output is normalized across supported extractors. JSON output always includes full non-fatal warnings for parse issues; stderr provides a human summary.
 2. **Smart scoping**: Analyzes git state to determine relevant range — feature branch lifetime, last N commits, uncommitted changes, or a time window
 3. **Correlation**: Filters entries to those relevant to the scope (time window + file overlap)
 4. **JSON output**: Emits structured data including entries and git context — the agent categorizes semantically and writes the final markdown

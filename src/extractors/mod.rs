@@ -17,6 +17,8 @@ pub mod claude_code;
 pub mod codex;
 pub mod detection;
 pub mod opencode; // kept for future rewrite — not wired into detect()
+#[cfg(test)]
+pub(crate) mod test_contract;
 pub mod traits;
 
 pub use detection::{detect_all_with_recency, ToolDetection, ToolPresenceStatus, ToolSupport};
@@ -195,7 +197,9 @@ pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::extractors::test_contract::assert_entries_contract;
     use chrono::{Duration, TimeZone};
+    use std::path::Path;
 
     fn sample_entry(prompt: &str) -> PromptEntry {
         let mut e = PromptEntry::new(
@@ -248,6 +252,7 @@ mod tests {
         assert_eq!(contributing[0].0, ExtractorKind::ClaudeCode);
         assert_eq!(contributing[1].0, ExtractorKind::Codex);
         assert!(diagnostics.warnings.is_empty());
+        assert_entries_contract(entries.as_slice(), Path::new("/proj"), since, until);
     }
 
     #[test]
