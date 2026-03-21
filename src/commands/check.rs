@@ -91,7 +91,6 @@ fn build_check_outcome(detections: &[ToolDetection], now: DateTime<Utc>) -> Chec
         lines.extend(supported_lines);
     } else {
         lines.push("Warning: No supported tool detected in your current environment.".to_string());
-        lines.push("  pmtx currently supports Claude Code and Codex CLI/Desktop.".to_string());
     }
 
     if !unsupported_lines.is_empty() {

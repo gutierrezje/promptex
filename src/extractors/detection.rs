@@ -184,7 +184,7 @@ fn detect_all_with_recency_inner(
     });
     detections.push(ToolDetection {
         kind: KnownToolKind::Cursor,
-        support: ToolSupport::Unsupported,
+        support: ToolSupport::Supported,
         status: categorize(cursor_last_seen, false, cursor_installed),
         last_seen: cursor_last_seen,
     });
@@ -341,7 +341,7 @@ mod tests {
             .find(|d| d.kind == KnownToolKind::Cursor)
             .unwrap();
         assert_eq!(cursor.status, ToolPresenceStatus::GlobalRecent);
-        assert_eq!(cursor.support, ToolSupport::Unsupported);
+        assert_eq!(cursor.support, ToolSupport::Supported);
     }
 
     #[test]

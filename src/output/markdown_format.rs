@@ -48,12 +48,16 @@ pub fn render_markdown(report: &ExtractionReport) -> String {
     let mut tool_counts: BTreeMap<&str, usize> = BTreeMap::new();
     let mut tool_models: BTreeMap<&str, HashSet<&str>> = BTreeMap::new();
     let mut unique_models: HashSet<&str> = HashSet::new();
+    let mut unique_action_tools: HashSet<&str> = HashSet::new();
 
     for e in &entries {
         *tool_counts.entry(&e.tool).or_insert(0) += 1;
         if let Some(m) = &e.model {
             tool_models.entry(&e.tool).or_default().insert(m);
             unique_models.insert(m);
+        }
+        for tool in &e.tool_calls {
+            unique_action_tools.insert(tool.as_str());
         }
     }
 
@@ -207,21 +211,22 @@ pub fn render_markdown(report: &ExtractionReport) -> String {
             for e in cat_entries {
                 writeln!(out).unwrap();
                 let time = e.timestamp.format("%H:%M");
+                let prompt_for_display = decode_visible_newlines(&e.prompt);
                 if let Some(m) = &e.model {
                     writeln!(out, "**[{}] ({} · {})**", time, e.tool, m).unwrap();
                 } else {
                     writeln!(out, "**[{}] ({})**", time, e.tool).unwrap();
                 }
 
-                if contains_markdown_or_json(&e.prompt) {
-                    let backticks = longest_backtick_sequence(&e.prompt);
+                if contains_markdown_or_json(&prompt_for_display) {
+                    let backticks = longest_backtick_sequence(&prompt_for_display);
                     let mut fence = String::new();
                     for _ in 0..std::cmp::max(4, backticks + 1) {
                         fence.push('`');
                     }
-                    writeln!(out, "{}text\n{}\n{}", fence, e.prompt, fence).unwrap();
+                    writeln!(out, "{}text\n{}\n{}", fence, prompt_for_display, fence).unwrap();
                 } else {
-                    for line in e.prompt.lines() {
+                    for line in prompt_for_display.lines() {
                         writeln!(out, "> {}", line).unwrap();
                     }
                 }
@@ -275,12 +280,12 @@ pub fn render_markdown(report: &ExtractionReport) -> String {
 
     writeln!(
         out,
-        "\n**Summary:** {} prompts ({} investigation, {} solution, {} testing) · {} tools",
+        "\n**Summary:** {} prompts ({} investigation, {} solution, {} testing) · {} tool types",
         total_prompts,
         inv_count,
         sol_count,
         tst_count,
-        tool_counts.len()
+        unique_action_tools.len()
     )
     .unwrap();
     writeln!(out, "\n</details>\n\n---").unwrap();
@@ -355,6 +360,13 @@ fn extract_question(ctx: &str) -> Option<String> {
     None
 }
 
+fn decode_visible_newlines(text: &str) -> String {
+    if text.contains('\n') {
+        return text.to_string();
+    }
+    text.replace("\\n", "\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,5 +399,61 @@ mod tests {
 
         let md = render_markdown(&report);
         assert!(md.contains("````text"));
+    }
+
+    #[test]
+    fn render_markdown_summary_counts_tool_call_types_not_sources() {
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 10, 0, 0).unwrap();
+
+        let mut entry = PromptEntry::new(
+            "main".to_string(),
+            "".to_string(),
+            "test".to_string(),
+            vec![],
+            vec!["Read".to_string(), "Write".to_string()],
+            "cursor".to_string(),
+            None,
+        );
+        entry.category = Some("Investigation".to_string());
+
+        let report = ExtractionReport {
+            scope: "uncommitted".to_string(),
+            since,
+            until: since,
+            commits: vec![],
+            scope_files: vec![],
+            entries: vec![entry],
+            warnings: vec![],
+        };
+
+        let md = render_markdown(&report);
+        assert!(md.contains("2 tool types"));
+    }
+
+    #[test]
+    fn render_markdown_decodes_visible_newlines_for_display() {
+        let since = Utc.with_ymd_and_hms(2026, 3, 1, 10, 0, 0).unwrap();
+        let mut entry = PromptEntry::new(
+            "main".to_string(),
+            "".to_string(),
+            "line one\\nline two".to_string(),
+            vec![],
+            vec![],
+            "cursor".to_string(),
+            None,
+        );
+        entry.category = Some("Investigation".to_string());
+        let report = ExtractionReport {
+            scope: "uncommitted".to_string(),
+            since,
+            until: since,
+            commits: vec![],
+            scope_files: vec![],
+            entries: vec![entry],
+            warnings: vec![],
+        };
+        let md = render_markdown(&report);
+        assert!(md.contains("> line one"));
+        assert!(md.contains("> line two"));
     }
 }

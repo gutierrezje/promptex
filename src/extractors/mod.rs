@@ -10,11 +10,12 @@
 //! | Claude Code    | ✅ Active | JSONL sessions at `~/.claude/projects/`        |
 //! | Codex CLI/App  | ✅ Active | JSONL sessions at `~/.codex/sessions/`         |
 //! | OpenCode       | ⏳ TODO  | Migrated to SQLite (v1.2+); needs rewrite       |
-//! | Cursor         | ⏳ TODO  | Log format TBD                                  |
+//! | Cursor         | ✅ Active | JSONL transcripts at `~/.cursor/projects/*/agent-transcripts/` |
 //! | GitHub Copilot | ⏳ TODO  | Log format TBD                                  |
 
 pub mod claude_code;
 pub mod codex;
+pub mod cursor;
 pub mod detection;
 pub mod opencode; // kept for future rewrite — not wired into detect()
 #[cfg(test)]
@@ -35,6 +36,7 @@ use crate::curation::sanitize::sanitize_for_markdown;
 use crate::prompt::PromptEntry;
 use claude_code::ClaudeCodeExtractor;
 use codex::CodexExtractor;
+use cursor::CursorExtractor;
 use traits::PromptExtractor;
 
 type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<ExtractorOutput>>;
@@ -87,6 +89,7 @@ impl ExtractionDiagnostics {
 pub enum ExtractorKind {
     ClaudeCode,
     Codex,
+    Cursor,
 }
 
 impl ExtractorKind {
@@ -95,6 +98,7 @@ impl ExtractorKind {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex CLI / Desktop",
+            Self::Cursor => "Cursor",
         }
     }
 }
@@ -187,6 +191,16 @@ pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
             let ex = CodexExtractor::new(sessions_dir, project_root.to_path_buf());
             sources.push((
                 ExtractorKind::Codex,
+                Box::new(move |since, until| ex.extract(since, until)),
+            ));
+        }
+    }
+
+    if CursorExtractor::is_available(project_root) {
+        if let Some(transcripts_dir) = CursorExtractor::transcripts_dir_for(project_root) {
+            let ex = CursorExtractor::new(transcripts_dir, project_root.to_path_buf());
+            sources.push((
+                ExtractorKind::Cursor,
                 Box::new(move |since, until| ex.extract(since, until)),
             ));
         }

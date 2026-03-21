@@ -72,7 +72,7 @@ pmtx projects remove <N|id>  # Remove a project by number or full ID
 | Claude Code | ✅ Supported |
 | Codex CLI / Desktop | ✅ Supported |
 | OpenCode | ⏳ Planned |
-| Cursor | ⏳ Planned |
+| Cursor | ✅ Supported |
 | Gemini CLI / Antigravity | ⏳ Planned |
 
 ## Why Use PromptEx?
