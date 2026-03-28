@@ -17,6 +17,7 @@ pub mod claude_code;
 pub mod codex;
 pub mod cursor;
 pub mod detection;
+pub mod gemini;
 pub mod opencode; // kept for future rewrite — not wired into detect()
 #[cfg(test)]
 pub(crate) mod test_contract;
@@ -37,6 +38,7 @@ use crate::prompt::PromptEntry;
 use claude_code::ClaudeCodeExtractor;
 use codex::CodexExtractor;
 use cursor::CursorExtractor;
+use gemini::GeminiCliExtractor;
 use traits::PromptExtractor;
 
 type ExtractFn = Box<dyn Fn(DateTime<Utc>, DateTime<Utc>) -> Result<ExtractorOutput>>;
@@ -90,6 +92,7 @@ pub enum ExtractorKind {
     ClaudeCode,
     Codex,
     Cursor,
+    GeminiCli,
 }
 
 impl ExtractorKind {
@@ -99,6 +102,7 @@ impl ExtractorKind {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex CLI / Desktop",
             Self::Cursor => "Cursor",
+            Self::GeminiCli => "Gemini CLI / Antigravity",
         }
     }
 }
@@ -201,6 +205,16 @@ pub fn detect(project_root: &Path, _project_id: &str) -> ActiveExtractor {
             let ex = CursorExtractor::new(transcripts_dir, project_root.to_path_buf());
             sources.push((
                 ExtractorKind::Cursor,
+                Box::new(move |since, until| ex.extract(since, until)),
+            ));
+        }
+    }
+
+    if GeminiCliExtractor::is_available(project_root) {
+        if let Some(log_dir) = GeminiCliExtractor::log_dir_for(project_root) {
+            let ex = GeminiCliExtractor::new(log_dir, project_root.to_path_buf());
+            sources.push((
+                ExtractorKind::GeminiCli,
                 Box::new(move |since, until| ex.extract(since, until)),
             ));
         }

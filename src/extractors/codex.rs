@@ -326,6 +326,69 @@ fn canonicalize_dir(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// Newest modification time among `rollout-*.jsonl` files whose session `cwd`
+/// is under `project_root`, matching [`CodexExtractor::extract`] scoping.
+///
+/// Used by `pmtx check` so Codex recency aligns with extraction.
+pub(crate) fn newest_project_rollout_mtime(
+    sessions_dir: &Path,
+    project_root: &Path,
+) -> Option<DateTime<Utc>> {
+    let project_root = canonicalize_dir(project_root);
+    let mut newest: Option<DateTime<Utc>> = None;
+    for path in collect_jsonl_files(sessions_dir) {
+        if !rollout_matches_project(&path, &project_root) {
+            continue;
+        }
+        if let Ok(meta) = fs::metadata(&path) {
+            if let Ok(mtime) = meta.modified() {
+                let dt: DateTime<Utc> = mtime.into();
+                newest = Some(match newest {
+                    Some(n) => n.max(dt),
+                    None => dt,
+                });
+            }
+        }
+    }
+    newest
+}
+
+/// Whether the rollout file's `session_meta` cwd is under `project_root` (canonicalized).
+fn rollout_matches_project(path: &Path, project_root: &Path) -> bool {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    let reader = BufReader::new(file);
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => return false,
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let v: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(|t| t.as_str()) != Some("session_meta") {
+            continue;
+        }
+        return match extract_session_cwd(&v) {
+            Some(cwd) => {
+                if !cwd.is_absolute() {
+                    return false;
+                }
+                let cwd = canonicalize_dir(&cwd);
+                cwd.strip_prefix(project_root).is_ok()
+            }
+            None => false,
+        };
+    }
+    false
+}
+
 fn parse_event_timestamp(event: &Value) -> Option<DateTime<Utc>> {
     event
         .get("timestamp")

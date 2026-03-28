@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
 
 use super::claude_code::ClaudeCodeExtractor;
+use super::codex::newest_project_rollout_mtime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KnownToolKind {
@@ -141,13 +142,20 @@ fn detect_all_with_recency_inner(
             None
         }
     });
-    let codex_last_seen = codex_sessions
+    let codex_global_last_seen = codex_sessions
         .as_ref()
         .and_then(|p| newest_mtime_limited(p, MAX_SCAN_DEPTH));
+    let codex_project_last_seen = codex_sessions
+        .as_ref()
+        .and_then(|p| newest_project_rollout_mtime(p, project_root));
+    let (codex_last_seen, codex_is_project) = match codex_project_last_seen {
+        Some(ts) => (Some(ts), true),
+        None => (codex_global_last_seen, false),
+    };
     detections.push(ToolDetection {
         kind: KnownToolKind::Codex,
         support: ToolSupport::Supported,
-        status: categorize(codex_last_seen, false, codex_installed),
+        status: categorize(codex_last_seen, codex_is_project, codex_installed),
         last_seen: codex_last_seen,
     });
 
@@ -207,13 +215,17 @@ fn detect_all_with_recency_inner(
     // 6. Gemini CLI
     let gemini_dir = home.as_ref().map(|h| h.join(".gemini"));
     let gemini_installed = gemini_dir.as_ref().is_some_and(|p| p.exists());
-    let gemini_last_seen = gemini_dir
+    let gemini_proj = match home.as_ref() {
+        Some(h) => gemini_log_dir_for_home(project_root, h),
+        None => super::gemini::GeminiCliExtractor::log_dir_for(project_root),
+    };
+    let gemini_last_seen = gemini_proj
         .as_ref()
         .and_then(|p| newest_mtime_limited(p, MAX_SCAN_DEPTH));
     detections.push(ToolDetection {
         kind: KnownToolKind::GeminiCli,
-        support: ToolSupport::Unsupported,
-        status: categorize(gemini_last_seen, false, gemini_installed),
+        support: ToolSupport::Supported,
+        status: categorize(gemini_last_seen, gemini_proj.is_some(), gemini_installed),
         last_seen: gemini_last_seen,
     });
 
@@ -256,6 +268,31 @@ fn claude_log_dir_for_home(project_root: &Path, home: &Path) -> Option<PathBuf> 
     let candidate = claude_projects.join(&slug);
     if candidate.exists() {
         Some(candidate)
+    } else {
+        None
+    }
+}
+
+fn gemini_log_dir_for_home(project_root: &Path, home: &Path) -> Option<PathBuf> {
+    let gemini_dir = home.join(".gemini");
+    let projects_json = gemini_dir.join("projects.json");
+
+    if !projects_json.exists() {
+        return None;
+    }
+
+    let file = std::fs::File::open(projects_json).ok()?;
+    let reader = std::io::BufReader::new(file);
+    let data: serde_json::Value = serde_json::from_reader(reader).ok()?;
+
+    let projects = data.get("projects")?.as_object()?;
+    let root_str = project_root.to_string_lossy().to_string();
+
+    let slug = projects.get(&root_str)?.as_str()?;
+
+    let chats_dir = gemini_dir.join("tmp").join(slug).join("chats");
+    if chats_dir.exists() {
+        Some(chats_dir)
     } else {
         None
     }
@@ -334,6 +371,7 @@ mod tests {
             .iter()
             .find(|d| d.kind == KnownToolKind::Codex)
             .unwrap();
+        // `stale.jsonl` is not a Codex rollout file; no project-scoped rollout — fallback to global.
         assert_eq!(codex.status, ToolPresenceStatus::GlobalStale);
 
         let cursor = detections
@@ -342,6 +380,110 @@ mod tests {
             .unwrap();
         assert_eq!(cursor.status, ToolPresenceStatus::GlobalRecent);
         assert_eq!(cursor.support, ToolSupport::Supported);
+
+        let gemini_dir = home.path().join(".gemini");
+        fs::create_dir_all(&gemini_dir).unwrap();
+        let projects_json = gemini_dir.join("projects.json");
+        let proj_path = project.path().to_string_lossy();
+        fs::write(
+            &projects_json,
+            format!(r#"{{"projects": {{"{}": "test-slug"}}}}"#, proj_path),
+        )
+        .unwrap();
+        let chats_dir = gemini_dir.join("tmp").join("test-slug").join("chats");
+        fs::create_dir_all(&chats_dir).unwrap();
+        fs::write(chats_dir.join("session.json"), "log").unwrap();
+
+        let detections = detect_all_with_recency_with_home(
+            project.path(),
+            Some(home.path().to_path_buf()),
+            now,
+            7,
+        );
+        let gemini = detections
+            .iter()
+            .find(|d| d.kind == KnownToolKind::GeminiCli)
+            .unwrap();
+        assert_eq!(gemini.status, ToolPresenceStatus::ProjectRecent);
+        assert_eq!(gemini.support, ToolSupport::Supported);
+    }
+
+    #[test]
+    fn test_codex_project_scoped_recency() {
+        let home = tempfile::TempDir::new().unwrap();
+        let project = tempfile::TempDir::new().unwrap();
+        let proj_canon = project.path().canonicalize().unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 3, 18, 12, 0, 0).unwrap();
+
+        let codex_dir = home.path().join(".codex").join("sessions");
+        fs::create_dir_all(&codex_dir).unwrap();
+        let rollout = codex_dir.join("rollout-2026-03-17T12-00-00-testuuid.jsonl");
+        let cwd_json = serde_json::to_string(proj_canon.to_str().unwrap()).unwrap();
+        fs::write(
+            &rollout,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"cwd\":{cwd_json},\"timestamp\":\"2026-03-17T12:00:00Z\",\"model_provider\":\"openai\"}}}}"
+            ),
+        )
+        .unwrap();
+        let recent_time = now - Duration::try_days(1).unwrap();
+        filetime::set_file_mtime(
+            &rollout,
+            filetime::FileTime::from_unix_time(recent_time.timestamp(), 0),
+        )
+        .unwrap();
+
+        let detections = detect_all_with_recency_with_home(
+            project.path(),
+            Some(home.path().to_path_buf()),
+            now,
+            7,
+        );
+
+        let codex = detections
+            .iter()
+            .find(|d| d.kind == KnownToolKind::Codex)
+            .unwrap();
+        assert_eq!(codex.status, ToolPresenceStatus::ProjectRecent);
+    }
+
+    #[test]
+    fn test_codex_project_stale_when_matching_rollout_old() {
+        let home = tempfile::TempDir::new().unwrap();
+        let project = tempfile::TempDir::new().unwrap();
+        let proj_canon = project.path().canonicalize().unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 3, 18, 12, 0, 0).unwrap();
+
+        let codex_dir = home.path().join(".codex").join("sessions");
+        fs::create_dir_all(&codex_dir).unwrap();
+        let rollout = codex_dir.join("rollout-2026-02-01T12-00-00-testuuid.jsonl");
+        let cwd_json = serde_json::to_string(proj_canon.to_str().unwrap()).unwrap();
+        fs::write(
+            &rollout,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"cwd\":{cwd_json},\"timestamp\":\"2026-02-01T12:00:00Z\",\"model_provider\":\"openai\"}}}}"
+            ),
+        )
+        .unwrap();
+        let stale_time = now - Duration::try_days(10).unwrap();
+        filetime::set_file_mtime(
+            &rollout,
+            filetime::FileTime::from_unix_time(stale_time.timestamp(), 0),
+        )
+        .unwrap();
+
+        let detections = detect_all_with_recency_with_home(
+            project.path(),
+            Some(home.path().to_path_buf()),
+            now,
+            7,
+        );
+
+        let codex = detections
+            .iter()
+            .find(|d| d.kind == KnownToolKind::Codex)
+            .unwrap();
+        assert_eq!(codex.status, ToolPresenceStatus::ProjectStale);
     }
 
     #[test]
